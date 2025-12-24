@@ -1,0 +1,226 @@
+<?php
+
+use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Athlete\AuthController as AthleteAuthController;
+use App\Http\Controllers\Athlete\DashboardController as AthleteDashboardController;
+use App\Http\Controllers\Athlete\EarningsController as AthleteEarningsController;
+use App\Http\Controllers\Athlete\ProfileController as AthleteProfileController;
+use App\Http\Controllers\DealController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaymentMethodController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\WalletController;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    if (Auth::check()) {
+        // Redirect super admins to admin dashboard
+        if (Auth::user()->is_superadmin) {
+            return redirect()->route('admin.dashboard');
+        }
+        return redirect()->route('dashboard');
+    }
+    if (Auth::guard('athlete')->check()) {
+        return redirect()->route('athlete.dashboard');
+    }
+    return view('welcome');
+})->name('welcome');
+
+Route::get('/dashboard', function () {
+    // Redirect super admins to admin dashboard
+    if (Auth::user()->is_superadmin) {
+        return redirect()->route('admin.dashboard');
+    }
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Deals
+    Route::get('/deals', [DealController::class, 'index'])->name('deals.index');
+    Route::delete('/deals/bulk-delete', [DealController::class, 'bulkDelete'])->name('deals.bulk-delete');
+    Route::get('/deals/{deal}/edit', [DealController::class, 'edit'])->name('deals.edit');
+    Route::patch('/deals/{deal}', [DealController::class, 'update'])->name('deals.update');
+    Route::delete('/deals/{deal}', [DealController::class, 'destroy'])->name('deals.destroy');
+    Route::get('/deals/create', [DealController::class, 'create'])->name('deals.create');
+    Route::post('/deals/create/type', [DealController::class, 'storeType'])->name('deals.create.type');
+    Route::get('/deals/create/platforms', [DealController::class, 'createPlatforms'])->name('deals.create.platforms');
+    Route::post('/deals/create/platforms', [DealController::class, 'storePlatforms'])->name('deals.create.platforms.store');
+    Route::get('/deals/create/compensation', [DealController::class, 'createCompensation'])->name('deals.create.compensation');
+    Route::post('/deals/create/compensation', [DealController::class, 'storeCompensation'])->name('deals.create.compensation.store');
+    Route::get('/deals/create/deadline', [DealController::class, 'createDeadline'])->name('deals.create.deadline');
+    Route::post('/deals/create/deadline', [DealController::class, 'storeDeadline'])->name('deals.create.deadline.store');
+    Route::get('/deals/create/notes', [DealController::class, 'createNotes'])->name('deals.create.notes');
+    Route::post('/deals/create/notes', [DealController::class, 'storeNotes'])->name('deals.create.notes.store');
+    Route::get('/deals/create/contract', [DealController::class, 'createContract'])->name('deals.create.contract');
+    Route::post('/deals/create/contract', [DealController::class, 'storeContract'])->name('deals.create.contract.store');
+    Route::get('/deals/create/payment', [DealController::class, 'createPayment'])->name('deals.create.payment');
+    Route::post('/deals/create/payment', [PaymentController::class, 'processDealPayment'])->name('deals.create.payment.store');
+    Route::get('/deals/review', [DealController::class, 'review'])->name('deals.review');
+    Route::post('/deals', [DealController::class, 'store'])->name('deals.store');
+    Route::get('/deals/{deal}/success', [DealController::class, 'success'])->name('deals.success');
+    Route::post('/deals/{deal}/approve', [\App\Http\Controllers\DealApprovalController::class, 'approve'])->name('deals.approve');
+    Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\DealApprovalController::class, 'cancel'])->name('deals.cancel');
+    Route::post('/deals/{deal}/release-payment', [PaymentController::class, 'releasePayment'])->name('deals.release-payment');
+    
+    // Deal Messages (SMB)
+    Route::get('/messages', [\App\Http\Controllers\DealMessageController::class, 'index'])->name('messages.index');
+    Route::get('/deals/{deal}/messages', [\App\Http\Controllers\DealMessageController::class, 'show'])->name('deals.messages');
+    Route::post('/deals/{deal}/messages', [\App\Http\Controllers\DealMessageController::class, 'store'])->name('deals.messages.store');
+    
+    // Notifications (SMB)
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
+    Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+});
+
+// Public route for viewing deals by token (for athletes) - must be outside auth middleware
+Route::get('/deal/{token}', [DealController::class, 'showByToken'])->name('deals.show.token');
+
+// Athlete routes
+Route::prefix('athlete')->name('athlete.')->middleware(['auth:athlete'])->group(function () {
+    Route::post('/deals/{token}/accept', [\App\Http\Controllers\Athlete\DealController::class, 'accept'])->name('deals.accept');
+    Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit');
+});
+
+Route::middleware('auth')->group(function () {
+});
+
+// Public route for viewing deals by token (for athletes)
+Route::get('/deals/{token}', [DealController::class, 'showByToken'])->name('deals.show.token');
+
+Route::middleware('auth')->group(function () {
+
+    // Wallet
+    Route::get('/wallet', [WalletController::class, 'index'])->name('wallet.index');
+    Route::get('/wallet/add-funds', [WalletController::class, 'showAddFunds'])->name('wallet.add-funds');
+    Route::post('/wallet/add-funds', [WalletController::class, 'addFunds'])->name('wallet.add-funds.store');
+
+    // Payment Methods
+    Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->name('payment-methods.index');
+    Route::get('/payment-methods/create', [PaymentMethodController::class, 'create'])->name('payment-methods.create');
+    Route::post('/payment-methods', [PaymentMethodController::class, 'store'])->name('payment-methods.store');
+    Route::post('/payment-methods/{paymentMethod}/set-default', [PaymentMethodController::class, 'setDefault'])->name('payment-methods.set-default');
+    Route::delete('/payment-methods/{paymentMethod}', [PaymentMethodController::class, 'destroy'])->name('payment-methods.destroy');
+
+    // Admin Settings (protected by super admin middleware)
+    Route::middleware(['auth', \App\Http\Middleware\EnsureSuperAdmin::class])->group(function () {
+        Route::get('/admin/settings', [SettingsController::class, 'index'])->name('admin.settings');
+        Route::post('/admin/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
+    });
+
+    // Stop impersonating route (accessible when impersonating, even if not logged in as admin)
+    Route::get('/admin/stop-impersonating', [\App\Http\Controllers\Admin\SuperAdminController::class, 'stopImpersonating'])->name('admin.stop-impersonating')->middleware('auth');
+
+    // Super Admin Routes
+    Route::prefix('admin')->name('admin.')->middleware(['auth', \App\Http\Middleware\EnsureSuperAdmin::class])->group(function () {
+        Route::get('/dashboard', [\App\Http\Controllers\Admin\SuperAdminController::class, 'index'])->name('dashboard');
+        
+        // User Management
+        Route::get('/users', [\App\Http\Controllers\Admin\SuperAdminController::class, 'users'])->name('users.index');
+        Route::get('/users/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showUser'])->name('users.show');
+        Route::post('/users/{user}/suspend', [\App\Http\Controllers\Admin\SuperAdminController::class, 'suspendUser'])->name('users.suspend');
+        Route::post('/users/{user}/reactivate', [\App\Http\Controllers\Admin\SuperAdminController::class, 'reactivateUser'])->name('users.reactivate');
+        Route::post('/users/{user}/impersonate', [\App\Http\Controllers\Admin\SuperAdminController::class, 'impersonateUser'])->name('users.impersonate');
+        Route::delete('/users/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteUsers'])->name('users.bulk-delete');
+        
+        // Deal Management
+        Route::get('/deals', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deals'])->name('deals.index');
+        Route::get('/deals/{deal}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showDeal'])->name('deals.show');
+        Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\Admin\SuperAdminController::class, 'cancelDeal'])->name('deals.cancel');
+        Route::delete('/deals/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteDeals'])->name('deals.bulk-delete');
+        
+        // Deal Messages (Super Admin - Read-only)
+        Route::get('/deals/{deal}/messages', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showDealMessages'])->name('deals.messages');
+        
+        // Payments
+        Route::get('/payments', [\App\Http\Controllers\Admin\SuperAdminController::class, 'payments'])->name('payments.index');
+        
+        // Athlete Management
+        Route::get('/athletes', [\App\Http\Controllers\Admin\SuperAdminController::class, 'athletes'])->name('athletes.index');
+        Route::get('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showAthlete'])->name('athletes.show');
+        Route::get('/athletes/{athlete}/edit', [\App\Http\Controllers\Admin\SuperAdminController::class, 'editAthlete'])->name('athletes.edit');
+        Route::put('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'updateAthlete'])->name('athletes.update');
+        Route::delete('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deleteAthlete'])->name('athletes.delete');
+        Route::post('/athletes/{athlete}/hide', [\App\Http\Controllers\Admin\SuperAdminController::class, 'hideAthleteProfile'])->name('athletes.hide');
+        Route::post('/athletes/{athlete}/show', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showAthleteProfile'])->name('athletes.show-profile');
+        Route::delete('/athletes/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteAthletes'])->name('athletes.bulk-delete');
+        
+        // Business Management
+        Route::get('/businesses', [\App\Http\Controllers\Admin\SuperAdminController::class, 'businesses'])->name('businesses.index');
+        Route::get('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showBusiness'])->name('businesses.show');
+        Route::get('/businesses/{user}/edit', [\App\Http\Controllers\Admin\SuperAdminController::class, 'editBusiness'])->name('businesses.edit');
+        Route::put('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'updateBusiness'])->name('businesses.update');
+        Route::delete('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deleteBusiness'])->name('businesses.delete');
+        
+        // Audit Logs
+        Route::get('/audit-logs', [\App\Http\Controllers\Admin\SuperAdminController::class, 'auditLogs'])->name('audit-logs.index');
+        
+        // Stripe & Fees Management
+        Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('stripe-fees.index');
+        Route::post('/stripe-fees/stripe/verify', [\App\Http\Controllers\Admin\StripeFeesController::class, 'verifyStripe'])->name('stripe-fees.verify-stripe');
+        Route::post('/stripe-fees/smb-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateSMBFee'])->name('stripe-fees.update-smb-fee');
+        Route::post('/stripe-fees/athlete-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateAthleteFee'])->name('stripe-fees.update-athlete-fee');
+    });
+});
+
+// Public athlete profile (link-only, not searchable)
+Route::get('/a/{identifier}', [AthleteProfileController::class, 'showPublic'])->name('athlete.profile');
+
+// Athlete authentication routes
+Route::prefix('athlete')->name('athlete.')->group(function () {
+    // Public routes
+    Route::get('/register', [AthleteAuthController::class, 'showRegisterForm'])->name('register');
+    Route::post('/register', [AthleteAuthController::class, 'register'])->name('register.store');
+    Route::get('/login', [AthleteAuthController::class, 'showLoginForm'])->name('login');
+    Route::post('/login', [AthleteAuthController::class, 'login'])->name('login.store');
+    Route::post('/logout', [AthleteAuthController::class, 'logout'])->name('logout');
+
+    // Protected routes
+    Route::middleware('auth:athlete')->group(function () {
+        Route::get('/dashboard', [AthleteDashboardController::class, 'index'])->name('dashboard');
+        
+        // Deal management
+        Route::get('/deals', [\App\Http\Controllers\Athlete\DealController::class, 'index'])->name('deals.index');
+        Route::post('/deals/{token}/accept', [\App\Http\Controllers\Athlete\DealController::class, 'accept'])->name('deals.accept');
+        Route::get('/deals/{deal}', [\App\Http\Controllers\Athlete\DealController::class, 'show'])->name('deals.show');
+        Route::get('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'showSubmit'])->name('deals.submit.show');
+        Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit');
+        
+        // Deal Messages (Athlete)
+        Route::get('/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'index'])->name('messages.index');
+        Route::get('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'show'])->name('deals.messages');
+        Route::post('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'store'])->name('deals.messages.store');
+        
+        // Notifications (Athlete)
+        Route::get('/notifications', [\App\Http\Controllers\Athlete\NotificationController::class, 'index'])->name('notifications.index');
+        Route::post('/notifications/{notification}/read', [\App\Http\Controllers\Athlete\NotificationController::class, 'markAsRead'])->name('notifications.read');
+        Route::post('/notifications/read-all', [\App\Http\Controllers\Athlete\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+        
+        // Profile setup flow
+        Route::get('/profile/setup', [AthleteProfileController::class, 'showSetup'])->name('profile.setup');
+        Route::post('/profile/setup', [AthleteProfileController::class, 'setup'])->name('profile.setup.store');
+        Route::get('/profile/social', [AthleteProfileController::class, 'showSocial'])->name('profile.social');
+        Route::post('/profile/social', [AthleteProfileController::class, 'updateSocial'])->name('profile.social.store');
+        Route::get('/profile/preview', [AthleteProfileController::class, 'showPreview'])->name('profile.preview');
+        
+        // Profile management
+        Route::get('/profile/edit', [AthleteProfileController::class, 'edit'])->name('profile.edit');
+        Route::patch('/profile', [AthleteProfileController::class, 'update'])->name('profile.update');
+        
+        // Earnings & Withdrawals
+        Route::get('/earnings', [AthleteEarningsController::class, 'index'])->name('earnings.index');
+        Route::get('/earnings/payment-method/create', [AthleteEarningsController::class, 'createPaymentMethod'])->name('earnings.payment-method.create');
+        Route::post('/earnings/payment-method', [AthleteEarningsController::class, 'storePaymentMethod'])->name('earnings.payment-method.store');
+        Route::delete('/earnings/payment-method/{paymentMethod}', [AthleteEarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy');
+        Route::post('/earnings/payment-method/{paymentMethod}/set-default', [AthleteEarningsController::class, 'setDefaultPaymentMethod'])->name('earnings.payment-method.set-default');
+        Route::get('/earnings/withdraw', [AthleteEarningsController::class, 'createWithdrawal'])->name('earnings.withdraw');
+        Route::post('/earnings/withdraw', [AthleteEarningsController::class, 'storeWithdrawal'])->name('earnings.withdraw.store');
+    });
+});
+
+require __DIR__.'/auth.php';
