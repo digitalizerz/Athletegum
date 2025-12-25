@@ -91,10 +91,9 @@ Route::post('/stripe/webhook', function (Request $request) {
 // Public route for viewing deals by token
 Route::get('/deal/{token}', [DealController::class, 'showByToken'])->name('deals.show.token');
 
-// Athlete routes
-Route::prefix('athlete')->name('athlete.')->middleware(['auth:athlete'])->group(function () {
+// Athlete public routes (no auth required for accepting deals by token)
+Route::prefix('athlete')->name('athlete.')->group(function () {
     Route::post('/deals/{token}/accept', [\App\Http\Controllers\Athlete\DealController::class, 'accept'])->name('deals.accept');
-    Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit');
 });
 
 // Wallet, payments, admin, etc. (unchanged)
@@ -124,6 +123,29 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
 
     Route::middleware('auth:athlete')->group(function () {
         Route::get('/dashboard', [AthleteDashboardController::class, 'index'])->name('dashboard');
+        
+        // Profile routes
+        Route::get('/profile/edit', [AthleteProfileController::class, 'edit'])->name('profile.edit');
+        Route::patch('/profile', [AthleteProfileController::class, 'update'])->name('profile.update');
+        
+        // Deals routes
+        Route::get('/deals', [\App\Http\Controllers\Athlete\DealController::class, 'index'])->name('deals.index');
+        Route::get('/deals/{deal}', [\App\Http\Controllers\Athlete\DealController::class, 'show'])->name('deals.show');
+        Route::get('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'showSubmit'])->name('deals.submit');
+        Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit.store');
+        
+        // Messages routes
+        Route::get('/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'index'])->name('messages.index');
+        Route::get('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'show'])->name('deals.messages');
+        Route::post('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'store'])->name('deals.messages.store');
+        
+        // Earnings routes
+        Route::get('/earnings', [\App\Http\Controllers\Athlete\EarningsController::class, 'index'])->name('earnings.index');
+        
+        // Notifications routes
+        Route::get('/notifications', [\App\Http\Controllers\Athlete\NotificationController::class, 'index'])->name('notifications.index');
+        Route::post('/notifications/{notification}/read', [\App\Http\Controllers\Athlete\NotificationController::class, 'markAsRead'])->name('notifications.read');
+        Route::post('/notifications/read-all', [\App\Http\Controllers\Athlete\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
     });
 });
 
