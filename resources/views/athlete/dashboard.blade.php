@@ -185,7 +185,7 @@
                                         {{ $deal->deadline ? $deal->deadline->format('M j, Y') : 'N/A' }}
                                     </td>
                                     <td>
-                                        <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-primary btn-sm">
+                                        <a href="{{ route('athlete.deals.submit', $deal) }}" class="btn btn-primary btn-sm">
                                             Submit Deliverables
                                         </a>
                                     </td>

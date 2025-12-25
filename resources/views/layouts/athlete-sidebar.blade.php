@@ -43,20 +43,42 @@
                     </svg>
                     Messages
                     @php
-                        $athleteId = Auth::guard('athlete')->id();
-                        $unreadMessageCount = \App\Models\Message::whereHas('deal', function($query) use ($athleteId) {
-                            $query->where('athlete_id', $athleteId)
-                                  ->where('status', '!=', 'pending')
-                                  ->where('status', '!=', 'completed')
-                                  ->where('status', '!=', 'cancelled')
-                                  ->whereNull('released_at');
-                        })
-                        ->where('sender_type', 'user')
-                        ->where(function($query) use ($athleteId) {
-                            $query->whereNull('read_by_athlete_ids')
-                                  ->orWhereJsonDoesntContain('read_by_athlete_ids', $athleteId);
-                        })
-                        ->count();
+                        try {
+                            $athleteId = Auth::guard('athlete')->id();
+                            // Check if the column exists by trying to query it
+                            $columns = \Schema::hasColumns('messages', ['read_by_athlete_ids']);
+                            
+                            if ($columns) {
+                                // New read tracking logic
+                                $unreadMessageCount = \App\Models\Message::whereHas('deal', function($query) use ($athleteId) {
+                                    $query->where('athlete_id', $athleteId)
+                                          ->where('status', '!=', 'pending')
+                                          ->where('status', '!=', 'completed')
+                                          ->where('status', '!=', 'cancelled')
+                                          ->whereNull('released_at');
+                                })
+                                ->where('sender_type', 'user')
+                                ->get()
+                                ->filter(function($message) use ($athleteId) {
+                                    $readBy = $message->read_by_athlete_ids ?? [];
+                                    return !in_array($athleteId, $readBy);
+                                })
+                                ->count();
+                            } else {
+                                // Fallback: count all messages (no read tracking yet)
+                                $unreadMessageCount = \App\Models\Message::whereHas('deal', function($query) use ($athleteId) {
+                                    $query->where('athlete_id', $athleteId)
+                                          ->where('status', '!=', 'pending')
+                                          ->where('status', '!=', 'completed')
+                                          ->where('status', '!=', 'cancelled')
+                                          ->whereNull('released_at');
+                                })
+                                ->where('sender_type', 'user')
+                                ->count();
+                            }
+                        } catch (\Exception $e) {
+                            $unreadMessageCount = 0;
+                        }
                     @endphp
                     @if($unreadMessageCount > 0)
                         <span class="badge badge-primary badge-sm">{{ $unreadMessageCount }}</span>
