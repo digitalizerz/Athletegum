@@ -9,10 +9,13 @@
         showBulkActions: false,
         showSingleDeleteModal: false,
         showImpersonateModal: false,
+        showSuspendModal: false,
+        showReactivateModal: false,
         deleteBusinessId: null,
         deleteBusinessName: '',
         actionBusinessId: null,
         actionBusinessName: '',
+        actionBusinessStatus: null,
         filters: {
             search: '{{ request('search', '') }}',
             status: '{{ request('status', '') }}'
@@ -179,6 +182,25 @@
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                             </svg>
                                         </a>
+                                        @if($business->email_verified_at)
+                                            <button 
+                                                @click="actionBusinessId = {{ $business->id }}; actionBusinessName = '{{ $business->name }}'; showSuspendModal = true;" 
+                                                class="btn btn-ghost btn-xs btn-square text-warning" 
+                                                title="Suspend">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                </svg>
+                                            </button>
+                                        @else
+                                            <button 
+                                                @click="actionBusinessId = {{ $business->id }}; actionBusinessName = '{{ $business->name }}'; showReactivateModal = true;" 
+                                                class="btn btn-ghost btn-xs btn-square text-success" 
+                                                title="Reactivate">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </button>
+                                        @endif
                                         <button 
                                             @click="actionBusinessId = {{ $business->id }}; actionBusinessName = '{{ $business->name }}'; showImpersonateModal = true;" 
                                             class="btn btn-ghost btn-xs btn-square" 
@@ -284,6 +306,52 @@
                         <button type="submit" class="btn btn-info">Impersonate</button>
                     </form>
                     <button @click="showImpersonateModal = false" class="btn btn-ghost">Cancel</button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button>close</button>
+            </form>
+        </dialog>
+
+        <!-- Suspend Business Modal -->
+        <dialog x-show="showSuspendModal" 
+                @click.away="showSuspendModal = false"
+                class="modal"
+                :class="{ 'modal-open': showSuspendModal }">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg">Suspend Business</h3>
+                <p class="py-4">
+                    Are you sure you want to suspend <span x-text="actionBusinessName"></span>? They will not be able to access their account until reactivated.
+                </p>
+                <div class="modal-action">
+                    <form method="POST" :action="'{{ url('/admin/users') }}/' + actionBusinessId + '/suspend'">
+                        @csrf
+                        <button type="submit" class="btn btn-warning">Suspend</button>
+                    </form>
+                    <button @click="showSuspendModal = false" class="btn btn-ghost">Cancel</button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button>close</button>
+            </form>
+        </dialog>
+
+        <!-- Reactivate Business Modal -->
+        <dialog x-show="showReactivateModal" 
+                @click.away="showReactivateModal = false"
+                class="modal"
+                :class="{ 'modal-open': showReactivateModal }">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg">Reactivate Business</h3>
+                <p class="py-4">
+                    Are you sure you want to reactivate <span x-text="actionBusinessName"></span>? They will be able to access their account again.
+                </p>
+                <div class="modal-action">
+                    <form method="POST" :action="'{{ url('/admin/users') }}/' + actionBusinessId + '/reactivate'">
+                        @csrf
+                        <button type="submit" class="btn btn-success">Reactivate</button>
+                    </form>
+                    <button @click="showReactivateModal = false" class="btn btn-ghost">Cancel</button>
                 </div>
             </div>
             <form method="dialog" class="modal-backdrop">
