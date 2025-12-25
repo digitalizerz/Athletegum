@@ -79,14 +79,7 @@ Route::middleware('auth')->group(function () {
 });
 
 // ✅ STRIPE WEBHOOK — PUBLIC (NO AUTH)
-Route::post('/stripe/webhook', function (Request $request) {
-    Log::info('Stripe webhook received', [
-        'event_id'   => $request->input('id'),
-        'event_type' => $request->input('type'),
-    ]);
-
-    return response()->json(['status' => 'ok']);
-});
+Route::post('/stripe/webhook', [\App\Http\Controllers\StripeWebhookController::class, 'handle']);
 
 // Public route for viewing deals by token
 Route::get('/deal/{token}', [DealController::class, 'showByToken'])->name('deals.show.token');

@@ -5,12 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\Deal;
 use App\Models\PaymentMethod;
 use App\Models\PlatformSetting;
+use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
+    protected StripeService $stripeService;
+
+    public function __construct(StripeService $stripeService)
+    {
+        $this->stripeService = $stripeService;
+    }
     /**
      * Process payment for a deal (wallet, card, or split payment)
      */
@@ -104,13 +112,79 @@ class PaymentController extends Controller
                     ]);
                 }
 
-                // Process card payment for remainder
-                // In production, this would process via Stripe
-                $paymentIntentId = 'card_' . uniqid();
-                $session->put('payment_method', 'wallet_card');
-                $session->put('card_payment_method_id', $paymentMethod->id);
-                $session->put('card_amount', $cardAmount);
-                $session->put('wallet_amount_used', $walletAmountUsed);
+                // Process card payment for remainder via REAL Stripe
+                if (!$this->stripeService->isConfigured()) {
+                    DB::rollBack();
+                    return redirect()->back()->withErrors([
+                        'error' => 'Stripe is not configured. Please contact support.'
+                    ]);
+                }
+
+                // Create or get Stripe customer
+                $customerId = $this->stripeService->getOrCreateCustomer(
+                    $user->id,
+                    $user->email,
+                    $user->name
+                );
+
+                // Calculate platform fee proportion for card portion
+                $cardPlatformFeeAmount = round(($cardAmount / $totalAmount) * $platformFeeAmount, 2);
+
+                try {
+                    $paymentIntent = $this->stripeService->createPaymentIntent(
+                        $cardAmount,
+                        $paymentMethod->provider_payment_method_id,
+                        $cardPlatformFeeAmount, // Application fee for card portion
+                        [
+                            'user_id' => $user->id,
+                            'deal_type' => $session->get('deal_type'),
+                            'compensation_amount' => (string) $compensationAmount,
+                            'platform_fee_amount' => (string) $cardPlatformFeeAmount,
+                            'escrow_amount' => (string) $escrowAmount,
+                            'payment_type' => 'partial_wallet',
+                            'wallet_amount_used' => (string) $walletAmountUsed,
+                        ]
+                    );
+
+                    if ($paymentIntent->status !== 'succeeded') {
+                        DB::rollBack();
+                        return redirect()->back()->withErrors([
+                            'error' => 'Card payment failed. Status: ' . $paymentIntent->status
+                        ]);
+                    }
+
+                    $paymentIntentId = $paymentIntent->id;
+                    $session->put('payment_method', 'wallet_card');
+                    $session->put('card_payment_method_id', $paymentMethod->id);
+                    $session->put('card_amount', $cardAmount);
+                    $session->put('wallet_amount_used', $walletAmountUsed);
+                    $session->put('stripe_charge_id', $paymentIntent->charges->data[0]->id ?? null);
+
+                    Log::info('Stripe PaymentIntent succeeded (partial wallet)', [
+                        'payment_intent_id' => $paymentIntentId,
+                        'card_amount' => $cardAmount,
+                        'wallet_amount' => $walletAmountUsed,
+                        'user_id' => $user->id,
+                    ]);
+                } catch (\Stripe\Exception\CardException $e) {
+                    DB::rollBack();
+                    Log::error('Stripe card payment failed (partial wallet)', [
+                        'error' => $e->getMessage(),
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Card payment failed: ' . $e->getError()->message
+                    ]);
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Stripe payment processing failed (partial wallet)', [
+                        'error' => $e->getMessage(),
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Payment processing failed: ' . $e->getMessage()
+                    ]);
+                }
 
             } else { // card_full
                 // Pay fully via card
@@ -122,12 +196,82 @@ class PaymentController extends Controller
                     return redirect()->back()->withErrors(['error' => 'Invalid payment method.']);
                 }
 
-                // Process card payment
-                // In production, this would process via Stripe
-                $paymentIntentId = 'card_' . uniqid();
-                $session->put('payment_method', 'card');
-                $session->put('card_payment_method_id', $paymentMethod->id);
-                $session->put('card_amount', $cardAmount);
+                // Check if Stripe is configured
+                if (!$this->stripeService->isConfigured()) {
+                    DB::rollBack();
+                    return redirect()->back()->withErrors([
+                        'error' => 'Stripe is not configured. Please contact support.'
+                    ]);
+                }
+
+                // Create or get Stripe customer
+                $customerId = $this->stripeService->getOrCreateCustomer(
+                    $user->id,
+                    $user->email,
+                    $user->name
+                );
+
+                // Create REAL Stripe PaymentIntent with application fee
+                try {
+                    $paymentIntent = $this->stripeService->createPaymentIntent(
+                        $cardAmount,
+                        $paymentMethod->provider_payment_method_id,
+                        $platformFeeAmount, // Application fee (platform fee)
+                        [
+                            'user_id' => $user->id,
+                            'deal_type' => $session->get('deal_type'),
+                            'compensation_amount' => (string) $compensationAmount,
+                            'platform_fee_amount' => (string) $platformFeeAmount,
+                            'escrow_amount' => (string) $escrowAmount,
+                        ]
+                    );
+
+                    // Check payment intent status
+                    if ($paymentIntent->status === 'requires_action' || $paymentIntent->status === 'requires_confirmation') {
+                        // Payment needs additional authentication
+                        DB::rollBack();
+                        return redirect()->back()->withErrors([
+                            'error' => 'Payment requires additional authentication. Please try again.'
+                        ]);
+                    }
+
+                    if ($paymentIntent->status !== 'succeeded') {
+                        DB::rollBack();
+                        return redirect()->back()->withErrors([
+                            'error' => 'Payment failed. Status: ' . $paymentIntent->status
+                        ]);
+                    }
+
+                    $paymentIntentId = $paymentIntent->id;
+                    $session->put('payment_method', 'card');
+                    $session->put('card_payment_method_id', $paymentMethod->id);
+                    $session->put('card_amount', $cardAmount);
+                    $session->put('stripe_charge_id', $paymentIntent->charges->data[0]->id ?? null);
+
+                    Log::info('Stripe PaymentIntent succeeded', [
+                        'payment_intent_id' => $paymentIntentId,
+                        'amount' => $cardAmount,
+                        'user_id' => $user->id,
+                    ]);
+                } catch (\Stripe\Exception\CardException $e) {
+                    DB::rollBack();
+                    Log::error('Stripe card payment failed', [
+                        'error' => $e->getMessage(),
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Card payment failed: ' . $e->getError()->message
+                    ]);
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Stripe payment processing failed', [
+                        'error' => $e->getMessage(),
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Payment processing failed: ' . $e->getMessage()
+                    ]);
+                }
             }
 
             // Store payment info in session
@@ -140,7 +284,15 @@ class PaymentController extends Controller
             $session->put('wallet_amount_used', $walletAmountUsed ?? 0);
             $session->put('card_amount', $cardAmount ?? 0);
             $session->put('payment_intent_id', $paymentIntentId);
-            $session->put('payment_status', 'paid');
+            
+            // For wallet payments, mark as paid immediately
+            // For Stripe payments, wait for webhook confirmation
+            if ($validated['payment_method'] === 'wallet_full') {
+                $session->put('payment_status', 'paid');
+            } else {
+                // Card payments: wait for webhook to confirm
+                $session->put('payment_status', 'pending');
+            }
 
             DB::commit();
 
@@ -184,10 +336,79 @@ class PaymentController extends Controller
             $athleteFeeAmount = round($escrowAmount * ($athleteFeePercentage / 100), 2);
             $athleteNetPayout = round($escrowAmount - $athleteFeeAmount, 2);
 
-            // Create a transaction record for the release
-            // In production, this would transfer funds to athlete's account via Stripe
-            // The athlete receives net payout, platform retains the fee
-            $releaseTransactionId = 'txn_' . uniqid();
+            // Get athlete's Stripe account ID
+            $athlete = $deal->athlete;
+            if (!$athlete || !$athlete->stripe_account_id) {
+                DB::rollBack();
+                return redirect()->back()->withErrors([
+                    'error' => 'Athlete does not have a Stripe account configured. They must set up payment methods first.'
+                ]);
+            }
+
+            // Get the original charge ID from the PaymentIntent
+            $chargeId = null;
+            if ($deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_')) {
+                try {
+                    $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id);
+                    if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
+                        $chargeId = $paymentIntent->charges->data[0]->id;
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to retrieve PaymentIntent for release', [
+                        'deal_id' => $deal->id,
+                        'payment_intent_id' => $deal->payment_intent_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Create REAL Stripe transfer to athlete
+            $releaseTransactionId = null;
+            if ($chargeId && $this->stripeService->isConfigured()) {
+                try {
+                    $transfer = $this->stripeService->transferToAthlete(
+                        $athleteNetPayout,
+                        $athlete->stripe_account_id,
+                        $chargeId,
+                        [
+                            'deal_id' => (string) $deal->id,
+                            'athlete_id' => (string) $athlete->id,
+                            'escrow_amount' => (string) $escrowAmount,
+                            'athlete_fee_percentage' => (string) $athleteFeePercentage,
+                            'athlete_fee_amount' => (string) $athleteFeeAmount,
+                            'athlete_net_payout' => (string) $athleteNetPayout,
+                        ]
+                    );
+
+                    $releaseTransactionId = $transfer->id;
+
+                    Log::info('Stripe transfer created for athlete', [
+                        'deal_id' => $deal->id,
+                        'transfer_id' => $transfer->id,
+                        'athlete_id' => $athlete->id,
+                        'amount' => $athleteNetPayout,
+                    ]);
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Stripe transfer failed', [
+                        'deal_id' => $deal->id,
+                        'athlete_id' => $athlete->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Failed to transfer funds to athlete: ' . $e->getMessage()
+                    ]);
+                }
+            } else {
+                // Fallback: create transaction record without Stripe transfer
+                // This should not happen in production, but allows graceful degradation
+                $releaseTransactionId = 'txn_fallback_' . uniqid();
+                Log::warning('Athlete payout without Stripe transfer', [
+                    'deal_id' => $deal->id,
+                    'athlete_id' => $athlete->id,
+                    'reason' => $chargeId ? 'Stripe not configured' : 'No charge ID',
+                ]);
+            }
             
             // Auto-approve if not already approved (when releasing from completed status)
             $wasApproved = $deal->is_approved;

@@ -20,6 +20,7 @@ class Athlete extends Authenticatable
         'name',
         'email',
         'password',
+        'stripe_account_id',
         'profile_token',
         'username',
         'profile_photo',

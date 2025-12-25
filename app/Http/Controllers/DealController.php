@@ -383,7 +383,38 @@ class DealController extends Controller
         $paymentStatus = $session->get('payment_status', 'pending');
 
         // Validate payment was processed
-        if (!$paymentIntentId || $paymentStatus !== 'paid') {
+        // For wallet payments, status must be 'paid'
+        // For Stripe payments, status can be 'pending' (webhook will confirm)
+        if (!$paymentIntentId) {
+            return redirect()->route('deals.create.payment')->withErrors(['error' => 'Payment must be processed before creating the deal.']);
+        }
+
+        // For Stripe payments, verify the PaymentIntent exists and is valid
+        if (str_starts_with($paymentIntentId, 'pi_')) {
+            try {
+                $stripeService = app(\App\Services\StripeService::class);
+                $paymentIntent = $stripeService->getPaymentIntent($paymentIntentId);
+                
+                // Only allow if payment succeeded or is processing
+                if (!in_array($paymentIntent->status, ['succeeded', 'processing'])) {
+                    return redirect()->route('deals.create.payment')->withErrors([
+                        'error' => 'Payment is not confirmed. Please try again.'
+                    ]);
+                }
+                
+                // Update payment status from Stripe
+                $paymentStatus = $paymentIntent->status === 'succeeded' ? 'paid' : 'pending';
+            } catch (\Exception $e) {
+                \Log::error('Failed to verify Stripe PaymentIntent', [
+                    'payment_intent_id' => $paymentIntentId,
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->route('deals.create.payment')->withErrors([
+                    'error' => 'Payment verification failed. Please contact support.'
+                ]);
+            }
+        } elseif ($paymentStatus !== 'paid') {
+            // Wallet payments must be 'paid'
             return redirect()->route('deals.create.payment')->withErrors(['error' => 'Payment must be processed before creating the deal.']);
         }
 
@@ -409,9 +440,9 @@ class DealController extends Controller
             'contract_signed' => $contractSigned,
             'contract_signed_at' => $contractSigned ? now() : null,
             'status' => 'pending',
-            'payment_status' => 'paid', // Mark as paid since payment was processed
+            'payment_status' => $paymentStatus, // 'paid' for wallet, 'pending' or 'paid' for Stripe
             'payment_intent_id' => $paymentIntentId,
-            'paid_at' => now(),
+            'paid_at' => $paymentStatus === 'paid' ? now() : null,
         ]);
 
         // Create deal invitation (required for identity guardrails)

@@ -25,6 +25,7 @@ class User extends Authenticatable
         'password',
         'is_superadmin',
         'wallet_balance',
+        'stripe_customer_id',
         'business_name',
         'business_information',
         'phone',
