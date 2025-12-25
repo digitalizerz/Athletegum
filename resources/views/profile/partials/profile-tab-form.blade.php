@@ -20,7 +20,7 @@
     </header>
 
     {{-- Read-only View --}}
-    <div x-show="!editing" style="display: none;">
+    <div x-show="!editing">
         <div class="space-y-4">
             <div>
                 <div class="text-sm text-base-content/60 mb-1">Name</div>
@@ -45,7 +45,7 @@
     </div>
 
     {{-- Edit Form --}}
-    <form x-show="editing" method="post" action="{{ route('profile.update') }}" class="space-y-6">
+    <form x-show="editing" method="post" action="{{ Auth::user()->is_superadmin ? route('admin.profile.update') : route('profile.update') }}" class="space-y-6">
         @csrf
         @method('patch')
 

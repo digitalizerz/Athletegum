@@ -7,30 +7,32 @@
         <div class="max-w-4xl">
             <div class="card bg-base-100 shadow-sm border border-base-300">
                 <div class="card-body">
-                    {{-- Tabs --}}
-                    <div class="tabs tabs-boxed mb-6" x-data="{ activeTab: 'profile' }">
-                        <a @click="activeTab = 'profile'" :class="activeTab === 'profile' ? 'tab-active' : ''" class="tab">
-                            Profile
-                        </a>
-                        <a @click="activeTab = 'security'" :class="activeTab === 'security' ? 'tab-active' : ''" class="tab">
-                            Security
-                        </a>
-                        <a @click="activeTab = 'danger'" :class="activeTab === 'danger' ? 'tab-active' : ''" class="tab tab-error">
-                            Danger Zone
-                        </a>
-                    </div>
+                    <div x-data="{ activeTab: 'profile' }">
+                        {{-- Tabs --}}
+                        <div class="tabs tabs-boxed mb-6">
+                            <a @click="activeTab = 'profile'" :class="activeTab === 'profile' ? 'tab-active' : ''" class="tab">
+                                Profile
+                            </a>
+                            <a @click="activeTab = 'security'" :class="activeTab === 'security' ? 'tab-active' : ''" class="tab">
+                                Security
+                            </a>
+                            <a @click="activeTab = 'danger'" :class="activeTab === 'danger' ? 'tab-active' : ''" class="tab tab-error">
+                                Danger Zone
+                            </a>
+                        </div>
 
-                    {{-- Tab Content --}}
-                    <div x-show="activeTab === 'profile'" x-transition>
-                        @include('profile.partials.profile-tab-form')
-                    </div>
+                        {{-- Tab Content --}}
+                        <div x-show="activeTab === 'profile'" x-transition>
+                            @include('profile.partials.profile-tab-form')
+                        </div>
 
-                    <div x-show="activeTab === 'security'" x-transition style="display: none;">
-                        @include('profile.partials.update-password-form')
-                    </div>
+                        <div x-show="activeTab === 'security'" x-transition style="display: none;">
+                            @include('profile.partials.update-password-form')
+                        </div>
 
-                    <div x-show="activeTab === 'danger'" x-transition style="display: none;">
-                        @include('profile.partials.delete-user-form')
+                        <div x-show="activeTab === 'danger'" x-transition style="display: none;">
+                            @include('profile.partials.delete-user-form')
+                        </div>
                     </div>
                 </div>
             </div>

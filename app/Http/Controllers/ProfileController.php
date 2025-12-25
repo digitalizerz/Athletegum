@@ -53,6 +53,11 @@ class ProfileController extends Controller
             $status = 'address-updated';
         }
 
+        // Redirect to appropriate route based on user type
+        if ($user->is_superadmin) {
+            return Redirect::route('admin.profile.edit')->with('status', $status);
+        }
+        
         return Redirect::route('profile.edit')->with('status', $status);
     }
 
