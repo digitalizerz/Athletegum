@@ -61,7 +61,10 @@ class EarningsController extends Controller
     {
         $validated = $request->validate([
             'type' => ['required', 'in:stripe'],
-            'provider_account_id' => ['nullable', 'string', 'max:255'],
+            'provider_account_id' => ['required', 'string', 'max:255', 'starts_with:acct_'],
+        ], [
+            'provider_account_id.required' => 'Stripe Account ID is required to receive payouts.',
+            'provider_account_id.starts_with' => 'Stripe Account ID must start with "acct_".',
         ]);
 
         $athlete = Auth::guard('athlete')->user();
@@ -74,11 +77,18 @@ class EarningsController extends Controller
             $athlete->paymentMethods()->update(['is_default' => false]);
         }
 
+        $stripeAccountId = $validated['provider_account_id'] ?? null;
+        
+        // If Stripe account ID is provided, also save it to the athlete record
+        if ($stripeAccountId) {
+            $athlete->update(['stripe_account_id' => $stripeAccountId]);
+        }
+
         $paymentMethod = AthletePaymentMethod::create([
             'athlete_id' => $athlete->id,
             'type' => 'stripe',
             'provider' => 'stripe',
-            'provider_account_id' => $validated['provider_account_id'] ?? null,
+            'provider_account_id' => $stripeAccountId,
             'is_default' => $isFirst,
             'is_active' => true,
         ]);
@@ -160,16 +170,16 @@ class EarningsController extends Controller
     }
 
     /**
-     * Delete payment method
+     * Delete payment method (disconnect Stripe account)
      */
-    public function destroyPaymentMethod(AthletePaymentMethod $paymentMethod)
+    public function destroyPaymentMethod($paymentMethodId)
     {
         $athlete = Auth::guard('athlete')->user();
 
-        // Ensure payment method belongs to athlete
-        if ($paymentMethod->athlete_id !== $athlete->id) {
-            abort(403);
-        }
+        // Find the payment method and ensure it belongs to athlete
+        $paymentMethod = AthletePaymentMethod::where('id', $paymentMethodId)
+            ->where('athlete_id', $athlete->id)
+            ->firstOrFail();
 
         // Check if there are pending withdrawals using this method
         $pendingWithdrawals = $paymentMethod->withdrawals()
@@ -181,9 +191,19 @@ class EarningsController extends Controller
                 ->withErrors(['error' => 'Cannot delete payment method with pending withdrawals.']);
         }
 
-        $paymentMethod->update(['is_active' => false]);
+        // Store account ID before deletion for comparison
+        $accountIdToDelete = $paymentMethod->provider_account_id;
 
-        return redirect()->back()->with('success', 'Payment method removed successfully.');
+        // Actually delete the payment method record
+        $paymentMethod->delete();
+
+        // If this payment method's account ID matches the athlete's stripe_account_id, clear it
+        if ($athlete->stripe_account_id && $accountIdToDelete === $athlete->stripe_account_id) {
+            $athlete->update(['stripe_account_id' => null]);
+        }
+
+        return redirect()->route('athlete.earnings.index')
+            ->with('success', 'Stripe account deleted successfully.');
     }
 
     /**

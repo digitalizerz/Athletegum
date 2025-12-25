@@ -143,7 +143,8 @@ class PaymentController extends Controller
                             'escrow_amount' => (string) $escrowAmount,
                             'payment_type' => 'partial_wallet',
                             'wallet_amount_used' => (string) $walletAmountUsed,
-                        ]
+                        ],
+                        $customerId // Include customer ID
                     );
 
                     if ($paymentIntent->status !== 'succeeded') {
@@ -223,7 +224,8 @@ class PaymentController extends Controller
                             'compensation_amount' => (string) $compensationAmount,
                             'platform_fee_amount' => (string) $platformFeeAmount,
                             'escrow_amount' => (string) $escrowAmount,
-                        ]
+                        ],
+                        $customerId // Include customer ID
                     );
 
                     // Check payment intent status
@@ -338,10 +340,34 @@ class PaymentController extends Controller
 
             // Get athlete's Stripe account ID
             $athlete = $deal->athlete;
-            if (!$athlete || !$athlete->stripe_account_id) {
+            if (!$athlete) {
                 DB::rollBack();
                 return redirect()->back()->withErrors([
-                    'error' => 'Athlete does not have a Stripe account configured. They must set up payment methods first.'
+                    'error' => 'Athlete not found for this deal.'
+                ]);
+            }
+
+            // Get Stripe account ID from athlete record or from their payment methods
+            $stripeAccountId = $athlete->stripe_account_id;
+            
+            // If not set on athlete, try to get from their payment methods
+            if (!$stripeAccountId) {
+                $paymentMethod = $athlete->paymentMethods()
+                    ->where('is_active', true)
+                    ->whereNotNull('provider_account_id')
+                    ->first();
+                
+                if ($paymentMethod && $paymentMethod->provider_account_id) {
+                    $stripeAccountId = $paymentMethod->provider_account_id;
+                    // Also update athlete record for future use
+                    $athlete->update(['stripe_account_id' => $stripeAccountId]);
+                }
+            }
+
+            if (!$stripeAccountId) {
+                DB::rollBack();
+                return redirect()->back()->withErrors([
+                    'error' => 'Athlete does not have a Stripe account configured. They must set up payment methods in their Earnings section first.'
                 ]);
             }
 
@@ -368,7 +394,7 @@ class PaymentController extends Controller
                 try {
                     $transfer = $this->stripeService->transferToAthlete(
                         $athleteNetPayout,
-                        $athlete->stripe_account_id,
+                        $stripeAccountId,
                         $chargeId,
                         [
                             'deal_id' => (string) $deal->id,
@@ -386,6 +412,7 @@ class PaymentController extends Controller
                         'deal_id' => $deal->id,
                         'transfer_id' => $transfer->id,
                         'athlete_id' => $athlete->id,
+                        'stripe_account_id' => $stripeAccountId,
                         'amount' => $athleteNetPayout,
                     ]);
                 } catch (\Exception $e) {

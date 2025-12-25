@@ -110,19 +110,66 @@
                     <div class="space-y-3">
                         @foreach($paymentMethods as $method)
                             <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
-                                <div class="flex items-center space-x-3">
+                                <div class="flex items-center space-x-3 flex-1">
                                     <div class="w-10 h-6 bg-primary rounded flex items-center justify-center text-primary-content font-bold text-xs">
                                         Stripe
                                     </div>
-                                    <div>
-                                        <div class="text-sm font-medium">{{ $method->stripe_account_id ?? 'Connected Account' }}</div>
+                                    <div class="flex-1">
+                                        <div class="text-sm font-medium">
+                                            {{ $method->provider_account_id ? substr($method->provider_account_id, 0, 20) . '...' : 'Connected Account' }}
+                                        </div>
                                         <div class="text-xs text-base-content/60">Stripe Connect</div>
                                     </div>
                                 </div>
-                                @if($method->is_default)
-                                    <span class="badge badge-primary">Default</span>
-                                @endif
+                                <div class="flex items-center gap-2">
+                                    @if($method->is_default)
+                                        <span class="badge badge-primary">Default</span>
+                                    @else
+                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.default', $method) }}" class="inline">
+                                            @csrf
+                                            <button type="submit" class="btn btn-ghost btn-xs" title="Set as default">
+                                                Set Default
+                                            </button>
+                                        </form>
+                                    @endif
+                                    <button 
+                                        type="button"
+                                        onclick="document.getElementById('delete-modal-{{ $method->id }}').showModal()"
+                                        class="btn btn-ghost btn-xs text-error" 
+                                        title="Delete">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
+                            
+                            <!-- Delete Modal for this payment method -->
+                            <dialog id="delete-modal-{{ $method->id }}" class="modal">
+                                <div class="modal-box">
+                                    <h3 class="font-bold text-lg text-error">Delete Stripe Account</h3>
+                                    <p class="py-4">
+                                        Are you sure you want to delete this Stripe account?
+                                        <br><br>
+                                        <strong>Account:</strong> {{ $method->provider_account_id ? substr($method->provider_account_id, 0, 20) . '...' : 'Connected Account' }}
+                                        <br><br>
+                                        <span class="text-error font-semibold">This action cannot be undone.</span> You will need to reconnect your Stripe account to receive future payouts.
+                                    </p>
+                                    <div class="modal-action">
+                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-error">Delete Account</button>
+                                        </form>
+                                        <form method="dialog">
+                                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <form method="dialog" class="modal-backdrop">
+                                    <button>close</button>
+                                </form>
+                            </dialog>
                         @endforeach
                     </div>
                 @endif

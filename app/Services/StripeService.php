@@ -60,6 +60,7 @@ class StripeService
      * @param string $paymentMethodId Stripe payment method ID
      * @param float $applicationFeeAmount Platform fee amount in dollars (for metadata only, not used in charge)
      * @param array $metadata Additional metadata
+     * @param string|null $customerId Stripe customer ID (required if payment method is attached to a customer)
      * @return PaymentIntent
      * @throws ApiErrorException
      */
@@ -67,7 +68,8 @@ class StripeService
         float $amount,
         string $paymentMethodId,
         float $applicationFeeAmount = 0,
-        array $metadata = []
+        array $metadata = [],
+        ?string $customerId = null
     ): PaymentIntent {
         if (!$this->isConfigured()) {
             throw new \Exception('Stripe is not configured. Please set STRIPE_KEY and STRIPE_SECRET in .env');
@@ -84,10 +86,20 @@ class StripeService
             'amount' => $amountInCents,
             'currency' => 'usd',
             'payment_method' => $paymentMethodId,
-            'confirmation_method' => 'manual',
             'confirm' => true,
             'metadata' => $metadata,
+            // Disable redirect-based payment methods to avoid requiring return_url
+            // Note: Cannot use confirmation_method with automatic_payment_methods
+            'automatic_payment_methods' => [
+                'enabled' => true,
+                'allow_redirects' => 'never',
+            ],
         ];
+
+        // If customer ID is provided, include it (required when payment method is attached to a customer)
+        if ($customerId) {
+            $params['customer'] = $customerId;
+        }
 
         // Note: Application fees require Stripe Connect
         // For v1, we charge the full amount and track platform fees separately

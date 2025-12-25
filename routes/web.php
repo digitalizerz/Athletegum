@@ -138,7 +138,7 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::post('/earnings/withdraw', [\App\Http\Controllers\Athlete\EarningsController::class, 'storeWithdrawal'])->name('earnings.withdraw.store');
         Route::get('/earnings/payment-method/create', [\App\Http\Controllers\Athlete\EarningsController::class, 'createPaymentMethod'])->name('earnings.payment-method.create');
         Route::post('/earnings/payment-method', [\App\Http\Controllers\Athlete\EarningsController::class, 'storePaymentMethod'])->name('earnings.payment-method.store');
-        Route::delete('/earnings/payment-method/{paymentMethod}', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy');
+        Route::delete('/earnings/payment-method/{paymentMethod}', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy')->where('paymentMethod', '[0-9]+');
         Route::post('/earnings/payment-method/{paymentMethod}/default', [\App\Http\Controllers\Athlete\EarningsController::class, 'setDefaultPaymentMethod'])->name('earnings.payment-method.default');
         
         // Notifications routes
