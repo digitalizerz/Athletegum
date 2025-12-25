@@ -49,6 +49,13 @@ class DealMessageController extends Controller
 
         $messages = $deal->messages()->with(['sender', 'athleteSender'])->get();
 
+        // Mark messages from athletes as read by this user
+        foreach ($messages as $message) {
+            if ($message->sender_type === 'athlete' && !$message->isReadByUser($user->id)) {
+                $message->markAsReadByUser($user->id);
+            }
+        }
+
         return view('deals.messages', [
             'deal' => $deal,
             'messages' => $messages,

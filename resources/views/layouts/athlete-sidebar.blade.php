@@ -42,6 +42,25 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                     Messages
+                    @php
+                        $athleteId = Auth::guard('athlete')->id();
+                        $unreadMessageCount = \App\Models\Message::whereHas('deal', function($query) use ($athleteId) {
+                            $query->where('athlete_id', $athleteId)
+                                  ->where('status', '!=', 'pending')
+                                  ->where('status', '!=', 'completed')
+                                  ->where('status', '!=', 'cancelled')
+                                  ->whereNull('released_at');
+                        })
+                        ->where('sender_type', 'user')
+                        ->where(function($query) use ($athleteId) {
+                            $query->whereNull('read_by_athlete_ids')
+                                  ->orWhereJsonDoesntContain('read_by_athlete_ids', $athleteId);
+                        })
+                        ->count();
+                    @endphp
+                    @if($unreadMessageCount > 0)
+                        <span class="badge badge-primary badge-sm">{{ $unreadMessageCount }}</span>
+                    @endif
                 </a>
             </li>
 

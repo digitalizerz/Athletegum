@@ -50,6 +50,13 @@ class DealMessageController extends Controller
 
         $messages = $deal->messages()->with(['sender', 'athleteSender'])->get();
 
+        // Mark messages from SMBs as read by this athlete
+        foreach ($messages as $message) {
+            if ($message->sender_type === 'user' && !$message->isReadByAthlete($athlete->id)) {
+                $message->markAsReadByAthlete($athlete->id);
+            }
+        }
+
         return view('athlete.deals.messages', [
             'deal' => $deal,
             'messages' => $messages,

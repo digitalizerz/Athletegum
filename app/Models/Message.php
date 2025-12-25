@@ -22,6 +22,8 @@ class Message extends Model
         'attachment_mime_type',
         'attachment_size',
         'is_system_message',
+        'read_by_user_ids',
+        'read_by_athlete_ids',
     ];
 
     protected function casts(): array
@@ -29,6 +31,8 @@ class Message extends Model
         return [
             'is_system_message' => 'boolean',
             'attachment_size' => 'integer',
+            'read_by_user_ids' => 'array',
+            'read_by_athlete_ids' => 'array',
         ];
     }
 
@@ -108,5 +112,49 @@ class Message extends Model
             'content' => $content,
             'is_system_message' => true,
         ]);
+    }
+
+    /**
+     * Mark message as read by a user (SMB)
+     */
+    public function markAsReadByUser(int $userId): void
+    {
+        $readBy = $this->read_by_user_ids ?? [];
+        if (!in_array($userId, $readBy)) {
+            $readBy[] = $userId;
+            $this->read_by_user_ids = $readBy;
+            $this->save();
+        }
+    }
+
+    /**
+     * Mark message as read by an athlete
+     */
+    public function markAsReadByAthlete(int $athleteId): void
+    {
+        $readBy = $this->read_by_athlete_ids ?? [];
+        if (!in_array($athleteId, $readBy)) {
+            $readBy[] = $athleteId;
+            $this->read_by_athlete_ids = $readBy;
+            $this->save();
+        }
+    }
+
+    /**
+     * Check if message is read by a user (SMB)
+     */
+    public function isReadByUser(int $userId): bool
+    {
+        $readBy = $this->read_by_user_ids ?? [];
+        return in_array($userId, $readBy);
+    }
+
+    /**
+     * Check if message is read by an athlete
+     */
+    public function isReadByAthlete(int $athleteId): bool
+    {
+        $readBy = $this->read_by_athlete_ids ?? [];
+        return in_array($athleteId, $readBy);
     }
 }

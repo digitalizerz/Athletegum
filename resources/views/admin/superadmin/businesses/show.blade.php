@@ -78,12 +78,15 @@
             <div class="card-body">
                 <h3 class="card-title mb-4">Actions</h3>
                 <div class="flex flex-wrap gap-2">
-                    <a href="{{ route('admin.users.impersonate', $user) }}" class="btn btn-primary">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
-                        Impersonate
-                    </a>
+                    <form method="POST" action="{{ route('admin.users.impersonate', $user) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            Impersonate
+                        </button>
+                    </form>
                     @if($user->email_verified_at)
                         <form method="POST" action="{{ route('admin.users.suspend', $user) }}" class="inline">
                             @csrf

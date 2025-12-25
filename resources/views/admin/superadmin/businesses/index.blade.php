@@ -8,8 +8,11 @@
         showDeleteModal: false,
         showBulkActions: false,
         showSingleDeleteModal: false,
+        showImpersonateModal: false,
         deleteBusinessId: null,
         deleteBusinessName: '',
+        actionBusinessId: null,
+        actionBusinessName: '',
         filters: {
             search: '{{ request('search', '') }}',
             status: '{{ request('status', '') }}'
@@ -176,11 +179,14 @@
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                             </svg>
                                         </a>
-                                        <a href="{{ route('admin.users.impersonate', $business) }}" class="btn btn-ghost btn-xs btn-square" title="Impersonate">
+                                        <button 
+                                            @click="actionBusinessId = {{ $business->id }}; actionBusinessName = '{{ $business->name }}'; showImpersonateModal = true;" 
+                                            class="btn btn-ghost btn-xs btn-square" 
+                                            title="Impersonate">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                             </svg>
-                                        </a>
+                                        </button>
                                         <button 
                                             @click="deleteBusinessId = {{ $business->id }}; deleteBusinessName = '{{ $business->name }}'; showSingleDeleteModal = true;" 
                                             class="btn btn-ghost btn-xs btn-square text-error" 
@@ -255,6 +261,29 @@
                         <button type="submit" class="btn btn-error">Delete Business</button>
                     </form>
                     <button @click="showSingleDeleteModal = false" class="btn btn-ghost">Cancel</button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button>close</button>
+            </form>
+        </dialog>
+
+        <!-- Impersonate Business Modal -->
+        <dialog x-show="showImpersonateModal" 
+                @click.away="showImpersonateModal = false"
+                class="modal"
+                :class="{ 'modal-open': showImpersonateModal }">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg">Impersonate Business</h3>
+                <p class="py-4">
+                    Are you sure you want to impersonate <span x-text="actionBusinessName"></span>? You will be logged in as this business. Use the admin panel to stop impersonating.
+                </p>
+                <div class="modal-action">
+                    <form method="POST" :action="'{{ url('/admin/users') }}/' + actionBusinessId + '/impersonate'">
+                        @csrf
+                        <button type="submit" class="btn btn-info">Impersonate</button>
+                    </form>
+                    <button @click="showImpersonateModal = false" class="btn btn-ghost">Cancel</button>
                 </div>
             </div>
             <form method="dialog" class="modal-backdrop">
