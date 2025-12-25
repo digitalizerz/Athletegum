@@ -21,10 +21,19 @@ class StripeService
         $this->publishableKey = config('services.stripe.key') ?? env('STRIPE_KEY');
         
         // Determine if we're in live mode
-        $this->isLive = str_starts_with($this->secretKey, 'sk_live_');
+        $this->isLive = !empty($this->secretKey) && str_starts_with($this->secretKey, 'sk_live_');
         
-        if ($this->secretKey) {
-            Stripe::setApiKey($this->secretKey);
+        // Only set API key if we have a secret key
+        // Don't throw exceptions in constructor - let isConfigured() handle it
+        if (!empty($this->secretKey)) {
+            try {
+                Stripe::setApiKey($this->secretKey);
+            } catch (\Exception $e) {
+                // Log but don't throw - will be caught by isConfigured() checks
+                Log::warning('Failed to set Stripe API key in constructor', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

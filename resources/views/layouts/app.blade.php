@@ -16,6 +16,8 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        
+        @stack('styles')
     </head>
     <body class="font-sans antialiased bg-gray-50">
         <div x-data="{ 
@@ -78,5 +80,7 @@
                  style="display: none;">
             </div>
         </div>
+
+        @stack('scripts')
     </body>
 </html>

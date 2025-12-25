@@ -27,22 +27,30 @@ class PaymentMethodController extends Controller
 
     public function create()
     {
-        return view('payment-methods.create');
+        $stripeKey = $this->stripeService->getPublishableKey();
+        
+        return view('payment-methods.create', [
+            'stripeKey' => $stripeKey,
+        ]);
     }
 
     public function store(Request $request)
     {
+        // Validate that we have a payment method ID from Stripe Elements
         $validated = $request->validate([
-            'card_number' => ['required', 'string', 'size:16'],
-            'exp_month' => ['required', 'string', 'size:2'],
-            'exp_year' => ['required', 'string', 'size:4'],
-            'cvc' => ['required', 'string', 'size:3'],
+            'payment_method_id' => ['required', 'string', 'starts_with:pm_'],
             'cardholder_name' => ['required', 'string', 'max:255'],
+        ], [
+            'payment_method_id.required' => 'Payment method is required. Please try again.',
+            'payment_method_id.starts_with' => 'Invalid payment method. Please try again.',
         ]);
 
         try {
             // Check if Stripe is configured
             if (!$this->stripeService->isConfigured()) {
+                Log::error('Stripe not configured when trying to add payment method', [
+                    'user_id' => Auth::id(),
+                ]);
                 return redirect()->back()->withErrors([
                     'error' => 'Stripe is not configured. Please contact support.'
                 ])->withInput();
@@ -50,26 +58,87 @@ class PaymentMethodController extends Controller
 
             $user = Auth::user();
 
-            // Create or get Stripe customer
-            $customerId = $this->stripeService->getOrCreateCustomer(
-                $user->id,
-                $user->email,
-                $user->name
-            );
-
-            // Create payment method in Stripe
-            $stripePaymentMethod = $this->stripeService->createPaymentMethod([
-                'number' => $validated['card_number'],
-                'exp_month' => (int) $validated['exp_month'],
-                'exp_year' => (int) $validated['exp_year'],
-                'cvc' => $validated['cvc'],
+            Log::info('Creating payment method for user', [
+                'user_id' => $user->id,
+                'email' => $user->email,
             ]);
 
+            // Create or get Stripe customer
+            try {
+                $customerId = $this->stripeService->getOrCreateCustomer(
+                    $user->id,
+                    $user->email,
+                    $user->name
+                );
+                Log::info('Stripe customer retrieved/created', [
+                    'user_id' => $user->id,
+                    'customer_id' => $customerId,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to get/create Stripe customer', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to set up payment account: ' . $e->getMessage()
+                ])->withInput();
+            }
+
+            // Retrieve the payment method from Stripe (already created by Stripe Elements on client)
+            try {
+                $stripePaymentMethod = \Stripe\PaymentMethod::retrieve($validated['payment_method_id']);
+                Log::info('Stripe payment method retrieved', [
+                    'user_id' => $user->id,
+                    'payment_method_id' => $stripePaymentMethod->id,
+                ]);
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                Log::error('Stripe payment method not found', [
+                    'user_id' => $user->id,
+                    'payment_method_id' => $validated['payment_method_id'],
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Payment method not found. Please try again.'
+                ])->withInput();
+            } catch (\Exception $e) {
+                Log::error('Failed to retrieve Stripe payment method', [
+                    'user_id' => $user->id,
+                    'payment_method_id' => $validated['payment_method_id'],
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to retrieve payment method: ' . $e->getMessage()
+                ])->withInput();
+            }
+
             // Attach to customer
-            $this->stripeService->attachPaymentMethodToCustomer(
-                $stripePaymentMethod->id,
-                $customerId
-            );
+            try {
+                $this->stripeService->attachPaymentMethodToCustomer(
+                    $stripePaymentMethod->id,
+                    $customerId
+                );
+                Log::info('Payment method attached to customer', [
+                    'user_id' => $user->id,
+                    'payment_method_id' => $stripePaymentMethod->id,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to attach payment method to customer', [
+                    'user_id' => $user->id,
+                    'payment_method_id' => $stripePaymentMethod->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Try to clean up the payment method
+                try {
+                    $stripePaymentMethod->detach();
+                } catch (\Exception $detachError) {
+                    Log::warning('Failed to detach payment method after attach failure', [
+                        'error' => $detachError->getMessage(),
+                    ]);
+                }
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to link payment method to account: ' . $e->getMessage()
+                ])->withInput();
+            }
 
             // Store in database
             $isFirst = Auth::user()->paymentMethods()->count() === 0;
