@@ -472,17 +472,73 @@ class SuperAdminController extends Controller
      */
     public function deleteAthlete(Athlete $athlete)
     {
-        AuditLog::log(
-            'athlete.deleted',
-            Athlete::class,
-            $athlete->id,
-            "Athlete {$athlete->email} was deleted by admin"
-        );
+        try {
+            DB::beginTransaction();
 
-        $athlete->delete();
+            // Delete related records in the correct order to avoid foreign key constraints
+            
+            // 1. Delete all withdrawals for this athlete's payment methods
+            $paymentMethodIds = \App\Models\AthletePaymentMethod::where('athlete_id', $athlete->id)
+                ->pluck('id');
+            
+            if ($paymentMethodIds->isNotEmpty()) {
+                // Delete all withdrawals associated with athlete's payment methods
+                DB::table('athlete_withdrawals')
+                    ->whereIn('athlete_payment_method_id', $paymentMethodIds)
+                    ->delete();
+                
+                // Delete all payment methods
+                DB::table('athlete_payment_methods')
+                    ->where('athlete_id', $athlete->id)
+                    ->delete();
+            }
 
-        return redirect()->route('admin.athletes.index')
-            ->with('success', 'Athlete deleted successfully.');
+            // 2. Delete notifications (cascade should handle this, but being explicit)
+            DB::table('notifications')
+                ->where('athlete_id', $athlete->id)
+                ->delete();
+
+            // 3. Update deals to set athlete_id to null (onDelete('set null'))
+            // This is handled by the foreign key constraint, but we can be explicit
+            DB::table('deals')
+                ->where('athlete_id', $athlete->id)
+                ->update(['athlete_id' => null]);
+
+            // 4. Update deal invitations to set athlete_id to null
+            DB::table('deal_invitations')
+                ->where('athlete_id', $athlete->id)
+                ->update(['athlete_id' => null]);
+
+            // 5. Update messages to set athlete_sender_id to null
+            DB::table('messages')
+                ->where('athlete_sender_id', $athlete->id)
+                ->update(['athlete_sender_id' => null]);
+
+            // 6. Log the deletion
+            AuditLog::log(
+                'athlete.deleted',
+                Athlete::class,
+                $athlete->id,
+                "Athlete {$athlete->email} was deleted by admin"
+            );
+
+            // 7. Finally, delete the athlete
+            $athlete->delete();
+
+            DB::commit();
+
+            return redirect()->route('admin.athletes.index')
+                ->with('success', 'Athlete deleted successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Failed to delete athlete', [
+                'athlete_id' => $athlete->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return redirect()->back()
+                ->withErrors(['error' => 'Failed to delete athlete: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -547,22 +603,75 @@ class SuperAdminController extends Controller
             'athlete_ids.*' => ['required', 'exists:athletes,id'],
         ]);
 
-        $athleteIds = $request->athlete_ids;
-        $count = Athlete::whereIn('id', $athleteIds)->count();
+        try {
+            DB::beginTransaction();
 
-        Athlete::whereIn('id', $athleteIds)->each(function($athlete) {
-            AuditLog::log(
-                'athlete.deleted',
-                Athlete::class,
-                $athlete->id,
-                "Athlete {$athlete->email} was deleted by admin"
-            );
-        });
+            $athleteIds = $request->athlete_ids;
+            $athletes = Athlete::whereIn('id', $athleteIds)->get();
+            $count = $athletes->count();
 
-        Athlete::whereIn('id', $athleteIds)->delete();
+            // Delete related records for all athletes
+            foreach ($athletes as $athlete) {
+                // Get payment method IDs for this athlete
+                $paymentMethodIds = \App\Models\AthletePaymentMethod::where('athlete_id', $athlete->id)
+                    ->pluck('id');
+                
+                if ($paymentMethodIds->isNotEmpty()) {
+                    // Delete withdrawals
+                    DB::table('athlete_withdrawals')
+                        ->whereIn('athlete_payment_method_id', $paymentMethodIds)
+                        ->delete();
+                    
+                    // Delete payment methods
+                    DB::table('athlete_payment_methods')
+                        ->where('athlete_id', $athlete->id)
+                        ->delete();
+                }
 
-        return redirect()->route('admin.athletes.index')
-            ->with('success', "{$count} athlete(s) deleted successfully.");
+                // Delete notifications
+                DB::table('notifications')
+                    ->where('athlete_id', $athlete->id)
+                    ->delete();
+
+                // Log deletion
+                AuditLog::log(
+                    'athlete.deleted',
+                    Athlete::class,
+                    $athlete->id,
+                    "Athlete {$athlete->email} was deleted by admin"
+                );
+            }
+
+            // Update deals, invitations, and messages
+            DB::table('deals')
+                ->whereIn('athlete_id', $athleteIds)
+                ->update(['athlete_id' => null]);
+
+            DB::table('deal_invitations')
+                ->whereIn('athlete_id', $athleteIds)
+                ->update(['athlete_id' => null]);
+
+            DB::table('messages')
+                ->whereIn('athlete_sender_id', $athleteIds)
+                ->update(['athlete_sender_id' => null]);
+
+            // Finally delete athletes
+            Athlete::whereIn('id', $athleteIds)->delete();
+
+            DB::commit();
+
+            return redirect()->route('admin.athletes.index')
+                ->with('success', "{$count} athlete(s) deleted successfully.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Failed to bulk delete athletes', [
+                'athlete_ids' => $athleteIds ?? [],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return redirect()->back()
+                ->withErrors(['error' => 'Failed to delete athletes: ' . $e->getMessage()]);
+        }
     }
 
     /**

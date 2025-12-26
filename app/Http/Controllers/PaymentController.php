@@ -495,13 +495,28 @@ class PaymentController extends Controller
                 // For Stripe card payments, we must have a charge ID to transfer from
                 if (!$chargeId) {
                     DB::rollBack();
-                    Log::error('Cannot release payment: No charge ID available for Stripe transfer', [
-                        'deal_id' => $deal->id,
-                        'payment_intent_id' => $deal->payment_intent_id,
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Cannot release payment: The original payment charge could not be found. This may be a wallet-funded deal or the payment may not have been fully processed. Please contact support.'
-                    ]);
+                    
+                    // Check if this is a wallet payment
+                    $isWalletPayment = $deal->payment_intent_id && !str_starts_with($deal->payment_intent_id, 'pi_');
+                    
+                    if ($isWalletPayment) {
+                        Log::error('Cannot release wallet payment: No Stripe charge exists', [
+                            'deal_id' => $deal->id,
+                            'payment_intent_id' => $deal->payment_intent_id,
+                        ]);
+                        return redirect()->back()->withErrors([
+                            'error' => 'This deal was paid using your wallet balance. Wallet payments cannot be automatically released to athletes via Stripe because they don\'t create Stripe charges. To release payment, please contact support or use a Stripe card payment method for future deals that need to be released to athletes.'
+                        ]);
+                    } else {
+                        Log::error('Cannot release payment: No charge ID available for Stripe transfer', [
+                            'deal_id' => $deal->id,
+                            'payment_intent_id' => $deal->payment_intent_id,
+                            'payment_status' => $deal->payment_status,
+                        ]);
+                        return redirect()->back()->withErrors([
+                            'error' => 'Cannot release payment: The Stripe payment charge could not be found. The payment may still be processing, or there may be an issue with the payment. Please wait a few minutes and try again, or contact support if the issue persists.'
+                        ]);
+                    }
                 }
 
                 Log::info('Attempting Stripe transfer to athlete', [
