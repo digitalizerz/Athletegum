@@ -427,16 +427,24 @@ class PaymentController extends Controller
 
             // Get the original charge ID from the PaymentIntent (if available)
             // For Stripe card payments, use source_transaction
-            // For wallet payments, transfer from platform balance
+            // For wallet payments, we cannot release via Stripe Transfer
             $chargeId = null;
             $isStripePayment = false;
             
+            // Check if this is a Stripe payment (payment_intent_id starts with 'pi_')
+            // Wallet payments have payment_intent_id like 'wallet_xxxxx'
             if ($deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_')) {
                 $isStripePayment = true;
                 try {
                     $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id);
                     if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
                         $chargeId = $paymentIntent->charges->data[0]->id;
+                    } else {
+                        Log::warning('PaymentIntent found but no charges available', [
+                            'deal_id' => $deal->id,
+                            'payment_intent_id' => $deal->payment_intent_id,
+                            'payment_intent_status' => $paymentIntent->status ?? 'unknown',
+                        ]);
                     }
                 } catch (\Exception $e) {
                     Log::error('Failed to retrieve PaymentIntent for release', [
@@ -444,7 +452,16 @@ class PaymentController extends Controller
                         'payment_intent_id' => $deal->payment_intent_id,
                         'error' => $e->getMessage(),
                     ]);
+                    // Will be caught below - chargeId will be null, which will trigger error
                 }
+            } else {
+                // This is a wallet payment (payment_intent_id doesn't start with 'pi_')
+                // or payment_intent_id is null/empty
+                $isStripePayment = false;
+                Log::info('Non-Stripe payment detected (wallet payment)', [
+                    'deal_id' => $deal->id,
+                    'payment_intent_id' => $deal->payment_intent_id,
+                ]);
             }
 
             // Create REAL Stripe transfer to athlete (REQUIRED - Stripe is source of truth)
@@ -459,32 +476,32 @@ class PaymentController extends Controller
             }
 
             try {
-                // For wallet payments, we need to create a charge to fund the platform balance
-                // This ensures funds are available in Stripe for transfer
+                // For wallet payments, we cannot create Stripe transfers because no Stripe charge exists
                 if (!$isStripePayment) {
-                    // Wallet payment - create a charge to fund the platform
-                    // Note: In production, wallet should be funded via actual Stripe charges when deposits are made
-                    // For now, we'll use a test charge to fund the transfer
-                    try {
-                        // Check if we're in test mode
-                        $isTestMode = str_starts_with($this->stripeService->getPublishableKey(), 'pk_test_');
-                        
-                        // Wallet payments don't create actual Stripe charges
-                        // Therefore, there's no Stripe balance to transfer from
-                        // This is a limitation of the current wallet implementation
-                        throw new \Exception('Wallet payments cannot be released via Stripe Transfer because no actual Stripe charge exists. Wallet payments are database-only and don\'t create Stripe balance.');
-                    } catch (\Exception $e) {
-                        DB::rollBack();
-                        Log::error('Failed to fund platform balance for wallet payment release', [
-                            'deal_id' => $deal->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                        $errorMsg = $isTestMode 
-                            ? 'Wallet payments cannot be released because they don\'t create Stripe charges. Please use a Stripe card payment method for deals that need to be released to athletes. The wallet system needs to be enhanced to create actual Stripe charges when payments are made.'
-                            : 'Wallet payments cannot be released via Stripe Transfer. Please use a Stripe card payment method for deals, or ensure wallet payments create actual Stripe charges.';
-                        
-                        return redirect()->back()->withErrors(['error' => $errorMsg]);
-                    }
+                    // Wallet payment - cannot release via Stripe Transfer
+                    DB::rollBack();
+                    $isTestMode = str_starts_with($this->stripeService->getPublishableKey(), 'pk_test_');
+                    Log::error('Cannot release wallet payment via Stripe Transfer', [
+                        'deal_id' => $deal->id,
+                        'payment_intent_id' => $deal->payment_intent_id,
+                    ]);
+                    $errorMsg = $isTestMode 
+                        ? 'Wallet payments cannot be released because they don\'t create Stripe charges. Please use a Stripe card payment method for deals that need to be released to athletes. The wallet system needs to be enhanced to create actual Stripe charges when payments are made.'
+                        : 'Wallet payments cannot be released via Stripe Transfer. Please use a Stripe card payment method for deals, or ensure wallet payments create actual Stripe charges.';
+                    
+                    return redirect()->back()->withErrors(['error' => $errorMsg]);
+                }
+
+                // For Stripe card payments, we must have a charge ID to transfer from
+                if (!$chargeId) {
+                    DB::rollBack();
+                    Log::error('Cannot release payment: No charge ID available for Stripe transfer', [
+                        'deal_id' => $deal->id,
+                        'payment_intent_id' => $deal->payment_intent_id,
+                    ]);
+                    return redirect()->back()->withErrors([
+                        'error' => 'Cannot release payment: The original payment charge could not be found. This may be a wallet-funded deal or the payment may not have been fully processed. Please contact support.'
+                    ]);
                 }
 
                 Log::info('Attempting Stripe transfer to athlete', [
@@ -493,13 +510,13 @@ class PaymentController extends Controller
                     'athlete_stripe_account_id' => $stripeAccountId,
                     'transfer_amount' => $athleteNetPayout,
                     'charge_id' => $chargeId,
-                    'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                    'payment_type' => 'stripe',
                 ]);
 
                 $transfer = $this->stripeService->transferToAthlete(
                     $athleteNetPayout,
                     $stripeAccountId,
-                    $chargeId, // Use charge ID for both card and wallet payments
+                    $chargeId, // Must have charge ID for Stripe transfers
                     [
                         'deal_id' => (string) $deal->id,
                         'athlete_id' => (string) $athlete->id,
@@ -534,6 +551,8 @@ class PaymentController extends Controller
                     $errorMessage = 'The athlete\'s Stripe account ID "' . $stripeAccountId . '" does not exist or is not accessible. The athlete must update their payment methods with a valid Stripe Connect account ID. They can find their account ID in their Stripe Dashboard → Settings → Connect → Accounts.';
                 } elseif (str_contains($errorMessage, 'Invalid account')) {
                     $errorMessage = 'The athlete\'s Stripe account ID is invalid. Please have them update their payment methods with a valid Stripe Connect account ID.';
+                } elseif (str_contains($errorMessage, 'insufficient available funds') || str_contains($errorMessage, 'insufficient funds')) {
+                    $errorMessage = 'Cannot release payment: This deal was paid via wallet or the original payment charge could not be found. Wallet payments cannot be released via Stripe because they don\'t create actual Stripe charges. For deals that need to be released to athletes, please use a Stripe card payment method instead of wallet.';
                 }
                 
                 Log::error('Stripe transfer failed - InvalidRequestException', [

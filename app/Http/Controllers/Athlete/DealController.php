@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DealController extends Controller
 {
@@ -182,6 +184,127 @@ class DealController extends Controller
         return view('athlete.deals.show', [
             'deal' => $deal,
         ]);
+    }
+
+    /**
+     * Show cancel deal form
+     */
+    public function showCancel(Deal $deal)
+    {
+        $athlete = Auth::guard('athlete')->user();
+
+        // Ensure deal belongs to athlete
+        if ($deal->athlete_id !== $athlete->id) {
+            abort(403);
+        }
+
+        // Can only cancel if deal is accepted (status = 'accepted') and in progress
+        // In progress means: accepted, not completed, not cancelled, payment not released
+        if ($deal->status !== 'accepted') {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'You can only cancel deals that have been accepted and are in progress.']);
+        }
+
+        // Cannot cancel if already completed
+        if ($deal->completed_at) {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'Cannot cancel a deal that has already been completed.']);
+        }
+
+        // Cannot cancel if payment already released
+        if ($deal->released_at) {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'Cannot cancel a deal that has already been paid.']);
+        }
+
+        return view('athlete.deals.cancel', [
+            'deal' => $deal,
+        ]);
+    }
+
+    /**
+     * Process deal cancellation
+     */
+    public function cancel(Request $request, Deal $deal)
+    {
+        $athlete = Auth::guard('athlete')->user();
+
+        // Ensure deal belongs to athlete
+        if ($deal->athlete_id !== $athlete->id) {
+            abort(403);
+        }
+
+        // Can only cancel if deal is accepted (status = 'accepted') and in progress
+        // In progress means: accepted, not completed, not cancelled, payment not released
+        if ($deal->status !== 'accepted') {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'You can only cancel deals that have been accepted and are in progress.']);
+        }
+
+        // Cannot cancel if already completed
+        if ($deal->completed_at) {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'Cannot cancel a deal that has already been completed.']);
+        }
+
+        // Cannot cancel if payment already released
+        if ($deal->released_at) {
+            return redirect()->route('athlete.deals.show', $deal)
+                ->withErrors(['error' => 'Cannot cancel a deal that has already been paid.']);
+        }
+
+        $validated = $request->validate([
+            'cancellation_reason' => ['required', 'string', 'min:10', 'max:1000'],
+        ], [
+            'cancellation_reason.required' => 'Please provide a reason for cancelling this deal.',
+            'cancellation_reason.min' => 'Cancellation reason must be at least 10 characters.',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Update deal status to cancelled
+            $deal->update([
+                'status' => 'cancelled',
+                'approval_notes' => 'Athlete cancellation: ' . $validated['cancellation_reason'],
+            ]);
+
+            // Create system message
+            \App\Models\Message::createSystemMessage(
+                $deal->id,
+                "Athlete cancelled this deal. Reason: " . $validated['cancellation_reason']
+            );
+
+            // Create notification for business
+            if ($deal->user_id) {
+                \App\Models\Notification::create([
+                    'user_id' => $deal->user_id,
+                    'type' => 'deal_cancelled',
+                    'title' => 'Deal Cancelled',
+                    'message' => "Athlete cancelled deal #{$deal->id}. Reason: " . Str::limit($validated['cancellation_reason'], 100),
+                    'link' => route('deals.index'),
+                    'deal_id' => $deal->id,
+                ]);
+            }
+
+            // Note: When athlete cancels, payment is NOT released
+            // The escrow funds remain in the system and should be handled according to business rules
+            // (typically returned to the SMB, but that's handled separately)
+
+            DB::commit();
+
+            return redirect()->route('athlete.deals.index')
+                ->with('success', 'Deal cancelled successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Illuminate\Support\Facades\Log::error('Failed to cancel deal', [
+                'deal_id' => $deal->id,
+                'error' => $e->getMessage(),
+            ]);
+            return redirect()->back()
+                ->withErrors(['error' => 'Failed to cancel deal: ' . $e->getMessage()])
+                ->withInput();
+        }
     }
 
     /**

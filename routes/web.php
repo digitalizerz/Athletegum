@@ -126,6 +126,8 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::get('/deals/{deal}', [\App\Http\Controllers\Athlete\DealController::class, 'show'])->name('deals.show');
         Route::get('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'showSubmit'])->name('deals.submit');
         Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit.store');
+        Route::get('/deals/{deal}/cancel', [\App\Http\Controllers\Athlete\DealController::class, 'showCancel'])->name('deals.cancel');
+        Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\Athlete\DealController::class, 'cancel'])->name('deals.cancel.store');
         
         // Messages routes
         Route::get('/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'index'])->name('messages.index');
