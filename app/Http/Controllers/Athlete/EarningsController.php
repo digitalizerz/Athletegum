@@ -64,7 +64,8 @@ class EarningsController extends Controller
     }
 
     /**
-     * Initiate Stripe Connect OAuth flow
+     * Initiate Stripe Connect OAuth flow (for optional early setup)
+     * This is for athletes who want to set up Stripe before withdrawing
      */
     public function initiateStripeConnect(Request $request)
     {
@@ -96,9 +97,18 @@ class EarningsController extends Controller
                 $stripeService->retrieveAccount($stripeAccountId);
             }
 
+            // Get redirect destination (default to earnings page for early setup)
+            $redirectTo = $request->get('redirect_to', 'athlete.earnings.index');
+
             // Create account link for onboarding/connecting
-            $returnUrl = route('athlete.earnings.stripe-connect.callback', ['athlete' => $athlete->id]);
-            $refreshUrl = route('athlete.earnings.stripe-connect.refresh', ['athlete' => $athlete->id]);
+            $returnUrl = route('athlete.earnings.stripe-connect.callback', [
+                'athlete' => $athlete->id,
+                'redirect_to' => $redirectTo
+            ]);
+            $refreshUrl = route('athlete.earnings.stripe-connect.refresh', [
+                'athlete' => $athlete->id,
+                'redirect_to' => $redirectTo
+            ]);
             
             $accountLink = $stripeService->createAccountLink($stripeAccountId, $returnUrl, $refreshUrl);
 
@@ -181,17 +191,41 @@ class EarningsController extends Controller
                 'payouts_enabled' => $payoutsEnabled,
             ]);
 
-            // Determine success message based on account status
+            // Determine success message and redirect based on account status
+            // After onboarding, redirect based on where they came from
+            $redirectTo = $request->get('redirect_to', 'athlete.earnings.index');
+            
             if ($chargesEnabled && $detailsSubmitted && $payoutsEnabled) {
-                // Fully verified and ready
+                // Fully onboarded
+                if ($redirectTo === 'athlete.earnings.withdraw') {
+                    return redirect()->route('athlete.earnings.withdraw')
+                        ->with('success', 'Stripe account connected successfully! You can now withdraw your earnings.');
+                } elseif ($redirectTo === 'athlete.profile.edit') {
+                    return redirect()->route('athlete.profile.edit')
+                        ->with('success', 'Stripe account connected successfully! You\'re all set to receive payouts.');
+                }
                 return redirect()->route('athlete.earnings.index')
                     ->with('success', 'Stripe account connected successfully! You can now receive payouts.');
             } elseif ($detailsSubmitted) {
                 // Onboarding completed but may need additional verification
+                if ($redirectTo === 'athlete.earnings.withdraw') {
+                    return redirect()->route('athlete.earnings.withdraw')
+                        ->with('success', 'Stripe account connected! Some verification steps may still be pending. You can proceed with withdrawal.');
+                } elseif ($redirectTo === 'athlete.profile.edit') {
+                    return redirect()->route('athlete.profile.edit')
+                        ->with('success', 'Stripe account connected! Some verification steps may still be pending. You\'ll be notified when your account is fully activated.');
+                }
                 return redirect()->route('athlete.earnings.index')
                     ->with('success', 'Stripe account connected! Some verification steps may still be pending. You\'ll be notified when your account is fully activated.');
             } else {
-                // Still in onboarding
+                // Still in onboarding - but allow them to proceed
+                if ($redirectTo === 'athlete.earnings.withdraw') {
+                    return redirect()->route('athlete.earnings.withdraw')
+                        ->with('warning', 'Stripe account connection started. You can proceed with withdrawal, but payouts may be delayed until verification is complete.');
+                } elseif ($redirectTo === 'athlete.profile.edit') {
+                    return redirect()->route('athlete.profile.edit')
+                        ->with('warning', 'Stripe account connection started. Please complete the verification process in your Stripe Dashboard to enable payouts.');
+                }
                 return redirect()->route('athlete.earnings.index')
                     ->with('warning', 'Stripe account connection started. Please complete the verification process in your Stripe Dashboard to enable payouts.');
             }
@@ -211,8 +245,48 @@ class EarningsController extends Controller
      */
     public function handleStripeConnectRefresh(Request $request, $athleteId)
     {
-        // Same as callback - redirect back to initiate connection
-        return $this->initiateStripeConnect($request);
+        $athlete = Auth::guard('athlete')->user();
+        
+        // Verify athlete ID matches logged-in athlete
+        if ($athlete->id != $athleteId) {
+            abort(403, 'Unauthorized');
+        }
+
+        $stripeService = app(\App\Services\StripeService::class);
+        $stripeAccountId = $athlete->stripe_account_id;
+
+        if (!$stripeAccountId) {
+            return redirect()->route('athlete.earnings.index')
+                ->withErrors(['error' => 'No Stripe account found. Please try connecting again.']);
+        }
+
+        try {
+            // Get redirect_to parameter if provided
+            $redirectTo = $request->get('redirect_to', 'athlete.earnings.index');
+            
+            // Create account link for onboarding
+            $returnUrl = route('athlete.earnings.stripe-connect.callback', [
+                'athlete' => $athlete->id,
+                'redirect_to' => $redirectTo
+            ]);
+            $refreshUrl = route('athlete.earnings.stripe-connect.refresh', [
+                'athlete' => $athlete->id,
+                'redirect_to' => $redirectTo
+            ]);
+            
+            $accountLink = $stripeService->createAccountLink($stripeAccountId, $returnUrl, $refreshUrl);
+
+            // Redirect to Stripe onboarding
+            return redirect($accountLink->url);
+        } catch (\Exception $e) {
+            Log::error('Failed to refresh Stripe Connect onboarding', [
+                'athlete_id' => $athlete->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return redirect()->route('athlete.earnings.index')
+                ->withErrors(['error' => 'Failed to refresh Stripe setup: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -302,16 +376,69 @@ class EarningsController extends Controller
 
     /**
      * Show form to withdraw funds
+     * This triggers Stripe Connect Express onboarding if athlete is not connected
      */
     public function createWithdrawal()
     {
         $athlete = Auth::guard('athlete')->user();
         $availableBalance = $athlete->available_balance;
-        $paymentMethods = $athlete->paymentMethods()->where('is_active', true)->orderBy('is_default', 'desc')->get();
+        
+        // Check if athlete has a Stripe Connect Express account
+        $stripeAccountId = $athlete->stripe_account_id;
+        $paymentMethods = $athlete->paymentMethods()
+            ->where('is_active', true)
+            ->whereNotNull('provider_account_id')
+            ->orderBy('is_default', 'desc')
+            ->get();
 
-        if ($paymentMethods->isEmpty()) {
-            return redirect()->route('athlete.earnings.payment-method.create')
-                ->with('error', 'Please add a payment method before withdrawing funds.');
+        // If no Stripe account connected, trigger onboarding
+        if ($paymentMethods->isEmpty() || !$stripeAccountId) {
+            $stripeService = app(\App\Services\StripeService::class);
+            
+            if (!$stripeService->isConfigured()) {
+                return redirect()->route('athlete.earnings.index')
+                    ->withErrors(['error' => 'Stripe is not configured. Please contact support.']);
+            }
+
+            // Initiate Stripe Connect Express onboarding
+            try {
+                // Create or retrieve Stripe Connect Express account
+                if (!$stripeAccountId) {
+                    // Create new Express account
+                    $account = $stripeService->createExpressAccount(
+                        $athlete->email,
+                        'US' // Default to US, can be made configurable
+                    );
+                    $stripeAccountId = $account->id;
+                    
+                    // Save to athlete record
+                    $athlete->update(['stripe_account_id' => $stripeAccountId]);
+                }
+
+                // Create account link for onboarding
+                // Include redirect_to parameter so callback knows where to send user
+                $returnUrl = route('athlete.earnings.stripe-connect.callback', [
+                    'athlete' => $athlete->id,
+                    'redirect_to' => 'athlete.earnings.withdraw'
+                ]);
+                $refreshUrl = route('athlete.earnings.stripe-connect.refresh', [
+                    'athlete' => $athlete->id,
+                    'redirect_to' => 'athlete.earnings.withdraw'
+                ]);
+                
+                $accountLink = $stripeService->createAccountLink($stripeAccountId, $returnUrl, $refreshUrl);
+
+                // Redirect to Stripe onboarding
+                return redirect($accountLink->url);
+            } catch (\Exception $e) {
+                Log::error('Failed to initiate Stripe Connect onboarding for withdrawal', [
+                    'athlete_id' => $athlete->id,
+                    'error' => $e->getMessage(),
+                ]);
+                
+                return redirect()->route('athlete.earnings.index')
+                    ->withErrors(['error' => 'Failed to start Stripe setup: ' . $e->getMessage()]);
+            }
         }
 
         return view('athlete.earnings.withdraw', compact('athlete', 'availableBalance', 'paymentMethods'));
