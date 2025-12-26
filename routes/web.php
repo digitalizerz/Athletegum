@@ -64,6 +64,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/deals', [DealController::class, 'store'])->name('deals.store');
     Route::get('/deals/{deal}/success', [DealController::class, 'success'])->name('deals.success');
     Route::post('/deals/{deal}/approve', [\App\Http\Controllers\DealApprovalController::class, 'approve'])->name('deals.approve');
+    Route::post('/deals/{deal}/request-revisions', [\App\Http\Controllers\DealApprovalController::class, 'requestRevisions'])->name('deals.request-revisions');
     Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\DealApprovalController::class, 'cancel'])->name('deals.cancel');
     Route::post('/deals/{deal}/release-payment', [PaymentController::class, 'releasePayment'])->name('deals.release-payment');
 

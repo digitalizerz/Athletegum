@@ -40,6 +40,8 @@
         showReleaseModal: false,
         releaseDealId: null,
         releaseAmount: null,
+        showRequestRevisionModal: false,
+        requestRevisionDealId: null,
         filters: {
             status: '{{ request('status', '') }}',
             deal_type: '{{ request('deal_type', '') }}',
@@ -305,6 +307,16 @@
                                                     </svg>
                                                 </a>
                                             @endif
+                                            @if(($deal->status === 'completed' || $deal->status === 'approved') && !$deal->released_at)
+                                                <button 
+                                                    @click="requestRevisionDealId = {{ $deal->id }}; showRequestRevisionModal = true;" 
+                                                    class="btn btn-ghost btn-xs btn-square text-warning" 
+                                                    title="Request Revisions">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                    </svg>
+                                                </button>
+                                            @endif
                                             @if($deal->canBeReleased())
                                                 <button 
                                                     @click="releaseDealId = {{ $deal->id }}; releaseAmount = {{ $deal->escrow_amount }}; showReleaseModal = true;" 
@@ -366,6 +378,53 @@
             </div>
             <form method="dialog" class="modal-backdrop">
                 <button>close</button>
+            </form>
+        </dialog>
+
+        <!-- Request Revisions Modal -->
+        <dialog x-show="showRequestRevisionModal" 
+                @click.away="showRequestRevisionModal = false"
+                class="modal"
+                :class="{ 'modal-open': showRequestRevisionModal }">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg text-warning">Request Revisions</h3>
+                <p class="py-4 text-sm">
+                    Send this deal back to the athlete for updates. They will be able to submit revised deliverables.
+                </p>
+                <form method="POST" :action="'{{ url('/deals') }}/' + requestRevisionDealId + '/request-revisions'" id="request-revision-form">
+                    @csrf
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text font-semibold">Revision Notes <span class="text-error">*</span></span>
+                            <span class="label-text-alt">Required (10-1000 characters)</span>
+                        </label>
+                        <textarea
+                            name="revision_notes"
+                            class="textarea textarea-bordered h-32 @error('revision_notes') textarea-error @enderror"
+                            placeholder="Please provide specific feedback on what needs to be revised..."
+                            required
+                            minlength="10"
+                            maxlength="1000"
+                        >{{ old('revision_notes') }}</textarea>
+                        <label class="label">
+                            <span class="label-text-alt text-base-content/60">
+                                This feedback will be shared with the athlete and stored in the deal messages.
+                            </span>
+                        </label>
+                        @error('revision_notes')
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ $message }}</span>
+                            </label>
+                        @enderror
+                    </div>
+                    <div class="modal-action">
+                        <button type="submit" class="btn btn-warning">Request Revisions</button>
+                        <button type="button" @click="showRequestRevisionModal = false" class="btn btn-ghost">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button @click="showRequestRevisionModal = false">close</button>
             </form>
         </dialog>
 

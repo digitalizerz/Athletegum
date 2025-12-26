@@ -367,11 +367,17 @@ class DealController extends Controller
         }
 
         // Update deal with deliverables
+        // If this is a resubmission (deal was sent back), append to existing deliverables or replace
+        // For simplicity, we'll replace deliverables on resubmission
         $deal->update([
             'status' => 'completed',
             'completion_notes' => $validated['completion_notes'],
             'deliverables' => !empty($deliverableFiles) ? $deliverableFiles : null,
             'completed_at' => now(),
+            // Clear approval flags when resubmitting
+            'is_approved' => false,
+            'approved_at' => null,
+            'approval_notes' => null,
         ]);
 
         // Create system message
