@@ -177,11 +177,6 @@
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-error" id="delete-submit-btn-{{ $method->id }}">Delete Account</button>
                                         </form>
-                                        <a href="{{ route('athlete.earnings.payment-method.destroy.get', ['paymentMethodId' => $method->id, 'confirm' => 'yes']) }}" 
-                                           class="btn btn-error btn-outline" 
-                                           onclick="return confirm('Are you sure you want to delete this Stripe account? This action cannot be undone.');"
-                                           id="delete-link-{{ $method->id }}"
-                                           style="display: none;">Delete Account (Alternative)</a>
                                         <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
                                     </div>
                                     <script>

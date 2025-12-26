@@ -603,22 +603,6 @@ class EarningsController extends Controller
     }
 
     /**
-     * Delete payment method via GET (fallback method for production issues)
-     * This is a simpler approach that avoids form submission issues
-     */
-    public function destroyPaymentMethodGet(Request $request, $paymentMethodId)
-    {
-        // Require confirmation token to prevent accidental deletions
-        if (!$request->has('confirm') || $request->get('confirm') !== 'yes') {
-            return redirect()->route('athlete.earnings.index')
-                ->withErrors(['error' => 'Deletion requires confirmation. Please use the delete button in the modal.']);
-        }
-
-        // Use the same logic as the POST method
-        return $this->destroyPaymentMethod($request, $paymentMethodId);
-    }
-
-    /**
      * Set default payment method
      */
     public function setDefaultPaymentMethod(AthletePaymentMethod $paymentMethod)
