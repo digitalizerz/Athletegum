@@ -41,7 +41,7 @@ class AuthController extends Controller
 
         Auth::guard('athlete')->login($athlete);
 
-        return redirect()->route('athlete.profile.setup');
+        return redirect()->route('athlete.dashboard');
     }
 
     /**
