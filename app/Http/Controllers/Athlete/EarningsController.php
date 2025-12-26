@@ -8,6 +8,9 @@ use App\Models\AthleteWithdrawal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Stripe\Account as StripeAccount;
+use Stripe\Exception\InvalidRequestException;
 
 class EarningsController extends Controller
 {
@@ -51,7 +54,165 @@ class EarningsController extends Controller
      */
     public function createPaymentMethod()
     {
-        return view('athlete.earnings.add-payment-method');
+        $stripeService = app(\App\Services\StripeService::class);
+        $isStripeConfigured = $stripeService->isConfigured();
+        
+        return view('athlete.earnings.add-payment-method', [
+            'isStripeConfigured' => $isStripeConfigured,
+            'stripePublishableKey' => $isStripeConfigured ? $stripeService->getPublishableKey() : null,
+        ]);
+    }
+
+    /**
+     * Initiate Stripe Connect OAuth flow
+     */
+    public function initiateStripeConnect(Request $request)
+    {
+        $athlete = Auth::guard('athlete')->user();
+        $stripeService = app(\App\Services\StripeService::class);
+
+        if (!$stripeService->isConfigured()) {
+            return redirect()->back()->withErrors([
+                'error' => 'Stripe is not configured. Please contact support.'
+            ]);
+        }
+
+        try {
+            // Create or retrieve Stripe Connect Express account
+            $stripeAccountId = $athlete->stripe_account_id;
+            
+            if (!$stripeAccountId) {
+                // Create new Express account
+                $account = $stripeService->createExpressAccount(
+                    $athlete->email,
+                    'US' // Default to US, can be made configurable
+                );
+                $stripeAccountId = $account->id;
+                
+                // Save account ID to athlete
+                $athlete->update(['stripe_account_id' => $stripeAccountId]);
+            } else {
+                // Verify account exists
+                $stripeService->retrieveAccount($stripeAccountId);
+            }
+
+            // Create account link for onboarding/connecting
+            $returnUrl = route('athlete.earnings.stripe-connect.callback', ['athlete' => $athlete->id]);
+            $refreshUrl = route('athlete.earnings.stripe-connect.refresh', ['athlete' => $athlete->id]);
+            
+            $accountLink = $stripeService->createAccountLink($stripeAccountId, $returnUrl, $refreshUrl);
+
+            // Redirect to Stripe
+            return redirect($accountLink->url);
+        } catch (\Exception $e) {
+            Log::error('Failed to initiate Stripe Connect', [
+                'athlete_id' => $athlete->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return redirect()->back()->withErrors([
+                'error' => 'Failed to initiate Stripe connection: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Handle Stripe Connect OAuth callback
+     */
+    public function handleStripeConnectCallback(Request $request, $athleteId)
+    {
+        $athlete = Auth::guard('athlete')->user();
+        
+        // Verify athlete ID matches logged-in athlete
+        if ($athlete->id != $athleteId) {
+            abort(403, 'Unauthorized');
+        }
+
+        $stripeService = app(\App\Services\StripeService::class);
+        $stripeAccountId = $athlete->stripe_account_id;
+
+        if (!$stripeAccountId) {
+            return redirect()->route('athlete.earnings.index')
+                ->withErrors(['error' => 'No Stripe account found. Please try connecting again.']);
+        }
+
+        try {
+            // Retrieve account to check status
+            $account = $stripeService->retrieveAccount($stripeAccountId);
+            
+            // Check account status
+            $chargesEnabled = $account->charges_enabled ?? false;
+            $detailsSubmitted = $account->details_submitted ?? false;
+            $payoutsEnabled = $account->payouts_enabled ?? false;
+
+            // Save payment method record (even if verification isn't complete)
+            // The account is connected, even if it needs additional verification
+            $paymentMethod = AthletePaymentMethod::updateOrCreate(
+                [
+                    'athlete_id' => $athlete->id,
+                    'provider_account_id' => $stripeAccountId,
+                ],
+                [
+                    'type' => 'stripe',
+                    'provider' => 'stripe',
+                    'is_active' => true,
+                ]
+            );
+
+            // If this is the first active payment method, make it default
+            $activePaymentMethodsCount = $athlete->paymentMethods()
+                ->where('is_active', true)
+                ->where('id', '!=', $paymentMethod->id)
+                ->count();
+            
+            if ($activePaymentMethodsCount === 0) {
+                // This is the first (or only) active payment method, make it default
+                // Also unset other defaults
+                $athlete->paymentMethods()->update(['is_default' => false]);
+                $paymentMethod->update(['is_default' => true]);
+            }
+
+            Log::info('Stripe Connect callback processed', [
+                'athlete_id' => $athlete->id,
+                'stripe_account_id' => $stripeAccountId,
+                'payment_method_id' => $paymentMethod->id,
+                'charges_enabled' => $chargesEnabled,
+                'details_submitted' => $detailsSubmitted,
+                'payouts_enabled' => $payoutsEnabled,
+            ]);
+
+            // Determine success message based on account status
+            if ($chargesEnabled && $detailsSubmitted && $payoutsEnabled) {
+                // Fully verified and ready
+                return redirect()->route('athlete.earnings.index')
+                    ->with('success', 'Stripe account connected successfully! You can now receive payouts.');
+            } elseif ($detailsSubmitted) {
+                // Onboarding completed but may need additional verification
+                return redirect()->route('athlete.earnings.index')
+                    ->with('success', 'Stripe account connected! Some verification steps may still be pending. You\'ll be notified when your account is fully activated.');
+            } else {
+                // Still in onboarding
+                return redirect()->route('athlete.earnings.index')
+                    ->with('warning', 'Stripe account connection started. Please complete the verification process in your Stripe Dashboard to enable payouts.');
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to handle Stripe Connect callback', [
+                'athlete_id' => $athlete->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return redirect()->route('athlete.earnings.index')
+                ->withErrors(['error' => 'Failed to complete Stripe connection: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle Stripe Connect refresh (when user needs to complete onboarding)
+     */
+    public function handleStripeConnectRefresh(Request $request, $athleteId)
+    {
+        // Same as callback - redirect back to initiate connection
+        return $this->initiateStripeConnect($request);
     }
 
     /**
@@ -61,13 +222,57 @@ class EarningsController extends Controller
     {
         $validated = $request->validate([
             'type' => ['required', 'in:stripe'],
-            'provider_account_id' => ['required', 'string', 'max:255', 'starts_with:acct_'],
+            'provider_account_id' => ['nullable', 'string', 'max:255', 'starts_with:acct_'],
         ], [
-            'provider_account_id.required' => 'Stripe Account ID is required to receive payouts.',
             'provider_account_id.starts_with' => 'Stripe Account ID must start with "acct_".',
         ]);
 
         $athlete = Auth::guard('athlete')->user();
+        $stripeAccountId = $validated['provider_account_id'] ?? null;
+
+        // If no account ID provided, check if athlete already has one from OAuth
+        if (!$stripeAccountId) {
+            $stripeAccountId = $athlete->stripe_account_id;
+        }
+
+        // Still need an account ID
+        if (!$stripeAccountId) {
+            return redirect()->back()
+                ->withErrors(['provider_account_id' => 'Either connect via OAuth above or enter a Stripe Account ID.'])
+                ->withInput();
+        }
+
+        // Validate that the Stripe account ID actually exists and is accessible
+        try {
+            $stripeService = app(\App\Services\StripeService::class);
+            if ($stripeService->isConfigured()) {
+                // Verify the account exists by trying to retrieve it
+                $account = StripeAccount::retrieve($stripeAccountId);
+                
+                // Check if it's the platform's own account (shouldn't be)
+                $platformAccount = StripeAccount::retrieve();
+                if ($account->id === $platformAccount->id) {
+                    return redirect()->back()
+                        ->withErrors(['provider_account_id' => 'You cannot use the platform\'s Stripe account. Please use your own Stripe Connect account ID from your Stripe Dashboard.'])
+                        ->withInput();
+                }
+            }
+        } catch (InvalidRequestException $e) {
+            // Account doesn't exist or is invalid
+            $errorMessage = $e->getMessage();
+            if (str_contains($errorMessage, 'No such account')) {
+                $errorMessage = 'The Stripe account ID does not exist. Please verify you entered the correct account ID from your Stripe Dashboard → Settings → Connect → Accounts.';
+            }
+            return redirect()->back()
+                ->withErrors(['provider_account_id' => $errorMessage])
+                ->withInput();
+        } catch (\Exception $e) {
+            // Log but allow to continue (might be a connectivity issue)
+            Log::warning('Could not validate Stripe account ID', [
+                'account_id' => $stripeAccountId,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // If this is the first payment method, make it default
         $isFirst = $athlete->paymentMethods()->count() === 0;
@@ -76,10 +281,8 @@ class EarningsController extends Controller
         if ($isFirst || $request->has('is_default')) {
             $athlete->paymentMethods()->update(['is_default' => false]);
         }
-
-        $stripeAccountId = $validated['provider_account_id'] ?? null;
         
-        // If Stripe account ID is provided, also save it to the athlete record
+        // Save Stripe account ID to the athlete record
         if ($stripeAccountId) {
             $athlete->update(['stripe_account_id' => $stripeAccountId]);
         }
@@ -197,9 +400,35 @@ class EarningsController extends Controller
         // Actually delete the payment method record
         $paymentMethod->delete();
 
+        // Refresh athlete to get latest data
+        $athlete->refresh();
+
         // If this payment method's account ID matches the athlete's stripe_account_id, clear it
-        if ($athlete->stripe_account_id && $accountIdToDelete === $athlete->stripe_account_id) {
-            $athlete->update(['stripe_account_id' => null]);
+        // Also check if this was the only active payment method - if so, clear athlete's stripe_account_id
+        if ($athlete->stripe_account_id === $accountIdToDelete) {
+            // Check if there are any other active payment methods
+            $hasOtherActiveMethods = AthletePaymentMethod::where('athlete_id', $athlete->id)
+                ->where('is_active', true)
+                ->exists();
+            
+            if (!$hasOtherActiveMethods) {
+                // No other active payment methods, clear the athlete's stripe_account_id
+                $athlete->update(['stripe_account_id' => null]);
+            } else {
+                // Get the account ID from another active payment method
+                $otherPaymentMethod = AthletePaymentMethod::where('athlete_id', $athlete->id)
+                    ->where('is_active', true)
+                    ->whereNotNull('provider_account_id')
+                    ->orderBy('is_default', 'desc')
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+                
+                if ($otherPaymentMethod && $otherPaymentMethod->provider_account_id) {
+                    $athlete->update(['stripe_account_id' => $otherPaymentMethod->provider_account_id]);
+                } else {
+                    $athlete->update(['stripe_account_id' => null]);
+                }
+            }
         }
 
         return redirect()->route('athlete.earnings.index')

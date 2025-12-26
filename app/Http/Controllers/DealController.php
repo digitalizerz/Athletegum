@@ -659,6 +659,14 @@ class DealController extends Controller
             abort(403);
         }
 
+        // Prevent deletion if athlete has submitted work
+        // Once work is submitted, the deal cannot be deleted to protect both parties
+        if ($deal->completed_at || $deal->status === 'completed' || !empty($deal->deliverables)) {
+            return redirect()->back()->withErrors([
+                'error' => 'Cannot delete deal. The athlete has already submitted their work. You must either approve or request changes instead.'
+            ]);
+        }
+
         // If deal has escrowed funds, return them before deletion
         if ($deal->shouldReturnEscrow()) {
             try {
@@ -705,6 +713,18 @@ class DealController extends Controller
         if ($deals->count() !== count($dealIds)) {
             return redirect()->route('deals.index')
                 ->withErrors(['error' => 'Some deals could not be found or you do not have permission to delete them.']);
+        }
+
+        // Check if any deals have submitted work (cannot be deleted)
+        $dealsWithSubmittedWork = $deals->filter(function ($deal) {
+            return $deal->completed_at || $deal->status === 'completed' || !empty($deal->deliverables);
+        });
+
+        if ($dealsWithSubmittedWork->count() > 0) {
+            return redirect()->route('deals.index')
+                ->withErrors([
+                    'error' => 'Cannot delete ' . $dealsWithSubmittedWork->count() . ' deal(s). The athlete has already submitted their work. You must either approve or request changes instead.'
+                ]);
         }
 
         Deal::whereIn('id', $dealIds)->delete();

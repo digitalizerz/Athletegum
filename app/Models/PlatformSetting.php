@@ -55,22 +55,24 @@ class PlatformSetting extends Model
     }
 
     /**
-     * Get SMB platform fee
+     * Get SMB platform fee (fixed at 10% per marketplace rules)
+     * Business pays: deal_amount + (deal_amount × 10%)
      */
     public static function getSMBPlatformFee(): array
     {
         return [
-            'type' => self::get('smb_platform_fee_type', 'percentage'),
-            'value' => self::get('smb_platform_fee_value', 10.0),
+            'type' => 'percentage',
+            'value' => 10.0, // Fixed 10% business fee - cannot be changed
         ];
     }
 
     /**
-     * Get athlete platform fee percentage
+     * Get athlete platform fee percentage (fixed at 5% per marketplace rules)
+     * Athlete receives: deal_amount - (deal_amount × 5%)
      */
     public static function getAthletePlatformFeePercentage(): float
     {
-        return self::get('athlete_platform_fee_percentage', 2.5);
+        return 5.0; // Fixed 5% athlete fee - cannot be changed
     }
 
     /**

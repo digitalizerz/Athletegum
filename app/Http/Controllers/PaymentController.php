@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Stripe\Account as StripeAccount;
+use Stripe\Exception\InvalidRequestException;
 
 class PaymentController extends Controller
 {
@@ -39,20 +41,17 @@ class PaymentController extends Controller
         $user = Auth::user();
         $walletBalance = (float) $user->wallet_balance ?? 0.00;
 
-        // Calculate payment breakdown using SMB platform fee
-        $compensationAmount = (float) $session->get('compensation_amount');
-        $smbFee = PlatformSetting::getSMBPlatformFee();
+        // Calculate payment breakdown per marketplace rules:
+        // Business pays: deal_amount + (deal_amount × 10%)
+        $dealAmount = (float) $session->get('compensation_amount'); // Base deal amount
+        $businessFeePercentage = 10.0; // Fixed 10% business fee
+        $businessFeeAmount = round($dealAmount * ($businessFeePercentage / 100), 2);
+        $businessTotal = round($dealAmount + $businessFeeAmount, 2); // Total business pays
         
-        if ($smbFee['type'] === 'percentage') {
-            $platformFeeAmount = round($compensationAmount * ($smbFee['value'] / 100), 2);
-            $platformFeePercentage = $smbFee['value'];
-        } else {
-            $platformFeeAmount = round($smbFee['value'], 2);
-            $platformFeePercentage = null; // Fixed fee, no percentage
-        }
-        
-        $escrowAmount = round($compensationAmount, 2);
-        $totalAmount = round($compensationAmount + $platformFeeAmount, 2);
+        // Escrow amount is the base deal amount (what athlete will eventually receive minus athlete fee)
+        $escrowAmount = round($dealAmount, 2);
+        $platformFeeAmount = $businessFeeAmount; // Platform fee from business
+        $platformFeePercentage = $businessFeePercentage;
 
         try {
             DB::beginTransaction();
@@ -63,20 +62,21 @@ class PaymentController extends Controller
 
             if ($validated['payment_method'] === 'wallet_full') {
                 // Pay fully from wallet
-                if ($walletBalance < $totalAmount) {
+                if ($walletBalance < $businessTotal) {
                     return redirect()->back()->withErrors([
                         'error' => 'Insufficient wallet balance. Your balance is $' . number_format($walletBalance, 2) . '.'
                     ]);
                 }
 
-                $walletAmountUsed = $totalAmount;
-                $user->deductFromWallet($totalAmount, 'payment', null, [
-                    'platform_fee_type' => $smbFee['type'],
+                $walletAmountUsed = $businessTotal;
+                $user->deductFromWallet($businessTotal, 'payment', null, [
+                    'platform_fee_type' => 'percentage',
                     'platform_fee_percentage' => $platformFeePercentage,
-                    'platform_fee_value' => $smbFee['value'],
+                    'platform_fee_value' => $businessFeePercentage,
                     'platform_fee_amount' => $platformFeeAmount,
                     'escrow_amount' => $escrowAmount,
-                    'compensation_amount' => $compensationAmount,
+                    'compensation_amount' => $dealAmount,
+                    'business_total' => $businessTotal,
                 ]);
 
                 $paymentIntentId = 'wallet_' . uniqid();
@@ -90,8 +90,8 @@ class PaymentController extends Controller
                     ]);
                 }
 
-                $walletAmountUsed = min($walletBalance, $totalAmount);
-                $cardAmount = $totalAmount - $walletAmountUsed;
+                $walletAmountUsed = min($walletBalance, $businessTotal);
+                $cardAmount = $businessTotal - $walletAmountUsed;
 
                 // Verify payment method belongs to user
                 $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
@@ -101,14 +101,17 @@ class PaymentController extends Controller
 
                 // Deduct wallet portion
                 if ($walletAmountUsed > 0) {
+                    // Calculate proportional platform fee for wallet portion
+                    $walletPlatformFeeAmount = round(($walletAmountUsed / $businessTotal) * $platformFeeAmount, 2);
                     $user->deductFromWallet($walletAmountUsed, 'payment', null, [
-                        'platform_fee_type' => $smbFee['type'],
+                        'platform_fee_type' => 'percentage',
                         'platform_fee_percentage' => $platformFeePercentage,
-                        'platform_fee_value' => $smbFee['value'],
-                        'platform_fee_amount' => $platformFeeAmount,
+                        'platform_fee_value' => $businessFeePercentage,
+                        'platform_fee_amount' => $walletPlatformFeeAmount,
                         'escrow_amount' => $escrowAmount,
-                        'compensation_amount' => $compensationAmount,
+                        'compensation_amount' => $dealAmount,
                         'payment_type' => 'partial_wallet',
+                        'business_total' => $businessTotal,
                     ]);
                 }
 
@@ -128,21 +131,22 @@ class PaymentController extends Controller
                 );
 
                 // Calculate platform fee proportion for card portion
-                $cardPlatformFeeAmount = round(($cardAmount / $totalAmount) * $platformFeeAmount, 2);
+                $cardPlatformFeeAmount = round(($cardAmount / $businessTotal) * $platformFeeAmount, 2);
 
                 try {
                     $paymentIntent = $this->stripeService->createPaymentIntent(
                         $cardAmount,
                         $paymentMethod->provider_payment_method_id,
-                        $cardPlatformFeeAmount, // Application fee for card portion
+                        $cardPlatformFeeAmount, // Platform fee for card portion (for tracking only)
                         [
                             'user_id' => $user->id,
                             'deal_type' => $session->get('deal_type'),
-                            'compensation_amount' => (string) $compensationAmount,
+                            'compensation_amount' => (string) $dealAmount,
                             'platform_fee_amount' => (string) $cardPlatformFeeAmount,
                             'escrow_amount' => (string) $escrowAmount,
                             'payment_type' => 'partial_wallet',
                             'wallet_amount_used' => (string) $walletAmountUsed,
+                            'business_total' => (string) $businessTotal,
                         ],
                         $customerId // Include customer ID
                     );
@@ -189,7 +193,7 @@ class PaymentController extends Controller
 
             } else { // card_full
                 // Pay fully via card
-                $cardAmount = $totalAmount;
+                $cardAmount = $businessTotal;
 
                 // Verify payment method belongs to user
                 $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
@@ -217,13 +221,14 @@ class PaymentController extends Controller
                     $paymentIntent = $this->stripeService->createPaymentIntent(
                         $cardAmount,
                         $paymentMethod->provider_payment_method_id,
-                        $platformFeeAmount, // Application fee (platform fee)
+                        $platformFeeAmount, // Platform fee (for tracking only - fees are handled in Stripe)
                         [
                             'user_id' => $user->id,
                             'deal_type' => $session->get('deal_type'),
-                            'compensation_amount' => (string) $compensationAmount,
+                            'compensation_amount' => (string) $dealAmount,
                             'platform_fee_amount' => (string) $platformFeeAmount,
                             'escrow_amount' => (string) $escrowAmount,
+                            'business_total' => (string) $businessTotal,
                         ],
                         $customerId // Include customer ID
                     );
@@ -277,12 +282,13 @@ class PaymentController extends Controller
             }
 
             // Store payment info in session
-            $session->put('platform_fee_type', $smbFee['type']);
+            $session->put('platform_fee_type', 'percentage');
             $session->put('platform_fee_percentage', $platformFeePercentage);
-            $session->put('platform_fee_value', $smbFee['value']);
+            $session->put('platform_fee_value', $businessFeePercentage);
             $session->put('platform_fee_amount', $platformFeeAmount);
             $session->put('escrow_amount', $escrowAmount);
-            $session->put('total_amount', $totalAmount);
+            $session->put('compensation_amount', $dealAmount); // Store original deal amount
+            $session->put('total_amount', $businessTotal); // Business total (deal_amount + 10%)
             $session->put('wallet_amount_used', $walletAmountUsed ?? 0);
             $session->put('card_amount', $cardAmount ?? 0);
             $session->put('payment_intent_id', $paymentIntentId);
@@ -332,11 +338,12 @@ class PaymentController extends Controller
         try {
             DB::beginTransaction();
 
-            // Calculate athlete fee and net payout
-            $athleteFeePercentage = PlatformSetting::getAthletePlatformFeePercentage();
-            $escrowAmount = (float) $deal->escrow_amount;
-            $athleteFeeAmount = round($escrowAmount * ($athleteFeePercentage / 100), 2);
-            $athleteNetPayout = round($escrowAmount - $athleteFeeAmount, 2);
+            // Calculate athlete payout per marketplace rules:
+            // Athlete receives: deal_amount - (deal_amount × 5%)
+            $dealAmount = (float) $deal->escrow_amount; // This is the base deal amount (what athlete earns)
+            $athleteFeePercentage = 5.0; // Fixed 5% athlete fee
+            $athleteFeeAmount = round($dealAmount * ($athleteFeePercentage / 100), 2);
+            $athleteNetPayout = round($dealAmount - $athleteFeeAmount, 2); // Athlete receives deal_amount - 5%
 
             // Get athlete's Stripe account ID
             $athlete = $deal->athlete;
@@ -347,21 +354,27 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Get Stripe account ID from athlete record or from their payment methods
-            $stripeAccountId = $athlete->stripe_account_id;
+            // Always refresh athlete to get latest data (in case payment methods were updated)
+            $athlete->refresh();
             
-            // If not set on athlete, try to get from their payment methods
-            if (!$stripeAccountId) {
-                $paymentMethod = $athlete->paymentMethods()
-                    ->where('is_active', true)
-                    ->whereNotNull('provider_account_id')
-                    ->first();
-                
-                if ($paymentMethod && $paymentMethod->provider_account_id) {
-                    $stripeAccountId = $paymentMethod->provider_account_id;
-                    // Also update athlete record for future use
+            // Get Stripe account ID from active payment methods first (most up-to-date)
+            // Then fall back to athlete record if no active payment methods
+            $paymentMethod = $athlete->paymentMethods()
+                ->where('is_active', true)
+                ->whereNotNull('provider_account_id')
+                ->orderBy('is_default', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->first();
+            
+            if ($paymentMethod && $paymentMethod->provider_account_id) {
+                $stripeAccountId = $paymentMethod->provider_account_id;
+                // Always update athlete record with the latest active payment method's account ID
+                if ($athlete->stripe_account_id !== $stripeAccountId) {
                     $athlete->update(['stripe_account_id' => $stripeAccountId]);
                 }
+            } else {
+                // Fall back to athlete record if no active payment methods
+                $stripeAccountId = $athlete->stripe_account_id;
             }
 
             if (!$stripeAccountId) {
@@ -371,9 +384,55 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Get the original charge ID from the PaymentIntent
+            // Validate that the Stripe account ID is a valid connected account format (starts with acct_)
+            if (!str_starts_with($stripeAccountId, 'acct_')) {
+                DB::rollBack();
+                Log::error('Invalid Stripe account ID format for athlete', [
+                    'athlete_id' => $athlete->id,
+                    'stripe_account_id' => $stripeAccountId,
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Athlete has an invalid Stripe account configuration. The account ID must start with "acct_". Please have the athlete update their payment methods in their Earnings section.'
+                ]);
+            }
+
+            // Log the account IDs for debugging
+            try {
+                $platformAccount = StripeAccount::retrieve();
+                $platformAccountId = $platformAccount->id;
+                
+                Log::info('Preparing Stripe transfer', [
+                    'deal_id' => $deal->id,
+                    'athlete_id' => $athlete->id,
+                    'athlete_stripe_account_id' => $stripeAccountId,
+                    'platform_account_id' => $platformAccountId,
+                    'accounts_match' => $stripeAccountId === $platformAccountId,
+                ]);
+                
+                // If accounts match, provide helpful error message
+                if ($stripeAccountId === $platformAccountId) {
+                    DB::rollBack();
+                    return redirect()->back()->withErrors([
+                        'error' => 'The athlete\'s Stripe account ID is the same as the platform account. The athlete must connect their own Stripe Connect account (not the platform account). Please have them remove the current payment method and add a new one with their own Stripe Connect account ID from their Stripe Dashboard.'
+                    ]);
+                }
+            } catch (\Exception $e) {
+                // If we can't retrieve platform account, log but continue
+                // Stripe API will validate the transfer anyway
+                Log::warning('Could not retrieve platform account for validation', [
+                    'error' => $e->getMessage(),
+                    'athlete_stripe_account_id' => $stripeAccountId,
+                ]);
+            }
+
+            // Get the original charge ID from the PaymentIntent (if available)
+            // For Stripe card payments, use source_transaction
+            // For wallet payments, transfer from platform balance
             $chargeId = null;
+            $isStripePayment = false;
+            
             if ($deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_')) {
+                $isStripePayment = true;
                 try {
                     $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id);
                     if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
@@ -388,52 +447,120 @@ class PaymentController extends Controller
                 }
             }
 
-            // Create REAL Stripe transfer to athlete
+            // Create REAL Stripe transfer to athlete (REQUIRED - Stripe is source of truth)
+            // For card payments: transfer from the charge
+            // For wallet payments: we need to create a charge first, then transfer
             $releaseTransactionId = null;
-            if ($chargeId && $this->stripeService->isConfigured()) {
-                try {
-                    $transfer = $this->stripeService->transferToAthlete(
-                        $athleteNetPayout,
-                        $stripeAccountId,
-                        $chargeId,
-                        [
-                            'deal_id' => (string) $deal->id,
-                            'athlete_id' => (string) $athlete->id,
-                            'escrow_amount' => (string) $escrowAmount,
-                            'athlete_fee_percentage' => (string) $athleteFeePercentage,
-                            'athlete_fee_amount' => (string) $athleteFeeAmount,
-                            'athlete_net_payout' => (string) $athleteNetPayout,
-                        ]
-                    );
+            if (!$this->stripeService->isConfigured()) {
+                DB::rollBack();
+                return redirect()->back()->withErrors([
+                    'error' => 'Stripe is not configured. Cannot release payment.'
+                ]);
+            }
 
-                    $releaseTransactionId = $transfer->id;
-
-                    Log::info('Stripe transfer created for athlete', [
-                        'deal_id' => $deal->id,
-                        'transfer_id' => $transfer->id,
-                        'athlete_id' => $athlete->id,
-                        'stripe_account_id' => $stripeAccountId,
-                        'amount' => $athleteNetPayout,
-                    ]);
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    Log::error('Stripe transfer failed', [
-                        'deal_id' => $deal->id,
-                        'athlete_id' => $athlete->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Failed to transfer funds to athlete: ' . $e->getMessage()
-                    ]);
+            try {
+                // For wallet payments, we need to create a charge to fund the platform balance
+                // This ensures funds are available in Stripe for transfer
+                if (!$isStripePayment) {
+                    // Wallet payment - create a charge to fund the platform
+                    // Note: In production, wallet should be funded via actual Stripe charges when deposits are made
+                    // For now, we'll use a test charge to fund the transfer
+                    try {
+                        // Check if we're in test mode
+                        $isTestMode = str_starts_with($this->stripeService->getPublishableKey(), 'pk_test_');
+                        
+                        // Wallet payments don't create actual Stripe charges
+                        // Therefore, there's no Stripe balance to transfer from
+                        // This is a limitation of the current wallet implementation
+                        throw new \Exception('Wallet payments cannot be released via Stripe Transfer because no actual Stripe charge exists. Wallet payments are database-only and don\'t create Stripe balance.');
+                    } catch (\Exception $e) {
+                        DB::rollBack();
+                        Log::error('Failed to fund platform balance for wallet payment release', [
+                            'deal_id' => $deal->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $errorMsg = $isTestMode 
+                            ? 'Wallet payments cannot be released because they don\'t create Stripe charges. Please use a Stripe card payment method for deals that need to be released to athletes. The wallet system needs to be enhanced to create actual Stripe charges when payments are made.'
+                            : 'Wallet payments cannot be released via Stripe Transfer. Please use a Stripe card payment method for deals, or ensure wallet payments create actual Stripe charges.';
+                        
+                        return redirect()->back()->withErrors(['error' => $errorMsg]);
+                    }
                 }
-            } else {
-                // Fallback: create transaction record without Stripe transfer
-                // This should not happen in production, but allows graceful degradation
-                $releaseTransactionId = 'txn_fallback_' . uniqid();
-                Log::warning('Athlete payout without Stripe transfer', [
+
+                Log::info('Attempting Stripe transfer to athlete', [
                     'deal_id' => $deal->id,
                     'athlete_id' => $athlete->id,
-                    'reason' => $chargeId ? 'Stripe not configured' : 'No charge ID',
+                    'athlete_stripe_account_id' => $stripeAccountId,
+                    'transfer_amount' => $athleteNetPayout,
+                    'charge_id' => $chargeId,
+                    'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                ]);
+
+                $transfer = $this->stripeService->transferToAthlete(
+                    $athleteNetPayout,
+                    $stripeAccountId,
+                    $chargeId, // Use charge ID for both card and wallet payments
+                    [
+                        'deal_id' => (string) $deal->id,
+                        'athlete_id' => (string) $athlete->id,
+                        'deal_amount' => (string) $dealAmount,
+                        'athlete_fee_percentage' => (string) $athleteFeePercentage,
+                        'athlete_fee_amount' => (string) $athleteFeeAmount,
+                        'athlete_net_payout' => (string) $athleteNetPayout,
+                        'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                    ]
+                );
+
+                $releaseTransactionId = $transfer->id;
+
+                Log::info('Stripe transfer created successfully', [
+                    'deal_id' => $deal->id,
+                    'transfer_id' => $transfer->id,
+                    'athlete_id' => $athlete->id,
+                    'stripe_account_id' => $stripeAccountId,
+                    'amount' => $athleteNetPayout,
+                    'charge_id' => $chargeId,
+                    'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                ]);
+            } catch (InvalidRequestException $e) {
+                DB::rollBack();
+                $errorMessage = $e->getMessage();
+                $stripeErrorCode = $e->getStripeCode() ?? 'unknown';
+                
+                // Provide user-friendly error messages for common issues
+                if (str_contains($errorMessage, 'cannot be set to your own account')) {
+                    $errorMessage = 'The athlete\'s Stripe account ID is the same as the platform account. The athlete must connect their own Stripe Connect account (not the platform account). Please have them remove the current payment method and add a new one with their own Stripe Connect account ID from their Stripe Dashboard.';
+                } elseif (str_contains($errorMessage, 'No such destination') || str_contains($errorMessage, 'does not exist') || str_contains($errorMessage, 'No such account')) {
+                    $errorMessage = 'The athlete\'s Stripe account ID "' . $stripeAccountId . '" does not exist or is not accessible. The athlete must update their payment methods with a valid Stripe Connect account ID. They can find their account ID in their Stripe Dashboard → Settings → Connect → Accounts.';
+                } elseif (str_contains($errorMessage, 'Invalid account')) {
+                    $errorMessage = 'The athlete\'s Stripe account ID is invalid. Please have them update their payment methods with a valid Stripe Connect account ID.';
+                }
+                
+                Log::error('Stripe transfer failed - InvalidRequestException', [
+                    'deal_id' => $deal->id,
+                    'athlete_id' => $athlete->id,
+                    'athlete_stripe_account_id' => $stripeAccountId,
+                    'transfer_amount' => $athleteNetPayout,
+                    'charge_id' => $chargeId,
+                    'error' => $e->getMessage(),
+                    'stripe_error_type' => $stripeErrorCode,
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to transfer funds to athlete: ' . $errorMessage
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Stripe transfer failed - unexpected error', [
+                    'deal_id' => $deal->id,
+                    'athlete_id' => $athlete->id,
+                    'athlete_stripe_account_id' => $stripeAccountId,
+                    'transfer_amount' => $athleteNetPayout,
+                    'charge_id' => $chargeId,
+                    'error' => $e->getMessage(),
+                    'error_type' => get_class($e),
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to transfer funds to athlete: ' . $e->getMessage()
                 ]);
             }
             

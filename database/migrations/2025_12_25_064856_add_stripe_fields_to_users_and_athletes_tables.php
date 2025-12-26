@@ -11,13 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('stripe_customer_id')->nullable()->after('wallet_balance');
-        });
+        // Add stripe_customer_id to users table if it doesn't exist
+        if (!Schema::hasColumn('users', 'stripe_customer_id')) {
+            Schema::table('users', function (Blueprint $table) {
+                // Try to add after wallet_balance, but if that column doesn't exist, just add it
+                if (Schema::hasColumn('users', 'wallet_balance')) {
+                    $table->string('stripe_customer_id')->nullable()->after('wallet_balance');
+                } else {
+                    $table->string('stripe_customer_id')->nullable();
+                }
+            });
+        }
 
-        Schema::table('athletes', function (Blueprint $table) {
-            $table->string('stripe_account_id')->nullable()->after('email');
-        });
+        // Add stripe_account_id to athletes table if it doesn't exist
+        if (!Schema::hasColumn('athletes', 'stripe_account_id')) {
+            Schema::table('athletes', function (Blueprint $table) {
+                $table->string('stripe_account_id')->nullable()->after('email');
+            });
+        }
     }
 
     /**
@@ -26,11 +37,15 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('stripe_customer_id');
+            if (Schema::hasColumn('users', 'stripe_customer_id')) {
+                $table->dropColumn('stripe_customer_id');
+            }
         });
 
         Schema::table('athletes', function (Blueprint $table) {
-            $table->dropColumn('stripe_account_id');
+            if (Schema::hasColumn('athletes', 'stripe_account_id')) {
+                $table->dropColumn('stripe_account_id');
+            }
         });
     }
 };

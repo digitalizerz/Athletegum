@@ -6,6 +6,8 @@ use Stripe\Stripe;
 use Stripe\PaymentIntent;
 use Stripe\PaymentMethod;
 use Stripe\Transfer;
+use Stripe\AccountLink;
+use Stripe\Account;
 use Stripe\Exception\ApiErrorException;
 use Illuminate\Support\Facades\Log;
 
@@ -216,9 +218,9 @@ class StripeService
      * 
      * Note: This requires Stripe Connect. The athlete must have a connected Stripe account.
      * 
-     * @param float $amount Amount in dollars (net payout after athlete fee)
+     * @param float $amount Amount in dollars (net payout after athlete fee = deal_amount - 5%)
      * @param string $athleteStripeAccountId Athlete's Stripe Connect account ID (acct_xxx)
-     * @param string $chargeId Original charge ID (ch_xxx)
+     * @param string|null $chargeId Original charge ID (ch_xxx) - if null, transfers from platform balance
      * @param array $metadata Additional metadata
      * @return Transfer
      * @throws ApiErrorException
@@ -226,7 +228,7 @@ class StripeService
     public function transferToAthlete(
         float $amount,
         string $athleteStripeAccountId,
-        string $chargeId,
+        ?string $chargeId = null,
         array $metadata = []
     ): Transfer {
         if (!$this->isConfigured()) {
@@ -237,19 +239,27 @@ class StripeService
 
         // Create transfer to athlete's connected account
         // This moves funds from platform account to athlete account
-        $transfer = Transfer::create([
+        $params = [
             'amount' => $amountInCents,
             'currency' => 'usd',
             'destination' => $athleteStripeAccountId,
-            'source_transaction' => $chargeId, // Transfer from the original charge
             'metadata' => $metadata,
-        ]);
+        ];
+
+        // If charge ID is provided, transfer from that specific charge
+        // If not (wallet payments), transfer from platform's available balance
+        if ($chargeId) {
+            $params['source_transaction'] = $chargeId;
+        }
+
+        $transfer = Transfer::create($params);
 
         Log::info('Stripe Transfer created for athlete', [
             'transfer_id' => $transfer->id,
             'amount' => $amount,
             'athlete_account' => $athleteStripeAccountId,
             'charge_id' => $chargeId,
+            'transfer_from' => $chargeId ? 'charge' : 'platform_balance',
         ]);
 
         return $transfer;
@@ -277,6 +287,68 @@ class StripeService
     public function getPublishableKey(): string
     {
         return $this->publishableKey;
+    }
+
+    /**
+     * Create a Stripe Connect account link for OAuth
+     */
+    public function createAccountLink(string $accountId, string $returnUrl, string $refreshUrl): AccountLink
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        return AccountLink::create([
+            'account' => $accountId,
+            'refresh_url' => $refreshUrl,
+            'return_url' => $returnUrl,
+            'type' => 'account_onboarding',
+        ]);
+    }
+
+    /**
+     * Create a Stripe Connect Express account
+     */
+    public function createExpressAccount(string $email, ?string $country = 'US'): Account
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        return Account::create([
+            'type' => 'express',
+            'country' => $country,
+            'email' => $email,
+            'capabilities' => [
+                'card_payments' => ['requested' => true],
+                'transfers' => ['requested' => true],
+            ],
+        ]);
+    }
+
+    /**
+     * Retrieve a Stripe Connect account
+     */
+    public function retrieveAccount(string $accountId): Account
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        return Account::retrieve($accountId);
+    }
+
+    /**
+     * Get account login link for Stripe Dashboard access
+     */
+    public function createLoginLink(string $accountId): string
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        $loginLink = Account::createLoginLink($accountId);
+        return $loginLink->url;
     }
 }
 

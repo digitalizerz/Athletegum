@@ -138,8 +138,13 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::post('/earnings/withdraw', [\App\Http\Controllers\Athlete\EarningsController::class, 'storeWithdrawal'])->name('earnings.withdraw.store');
         Route::get('/earnings/payment-method/create', [\App\Http\Controllers\Athlete\EarningsController::class, 'createPaymentMethod'])->name('earnings.payment-method.create');
         Route::post('/earnings/payment-method', [\App\Http\Controllers\Athlete\EarningsController::class, 'storePaymentMethod'])->name('earnings.payment-method.store');
-        Route::delete('/earnings/payment-method/{paymentMethod}', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy')->where('paymentMethod', '[0-9]+');
+        Route::delete('/earnings/payment-method/{paymentMethodId}', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy')->where('paymentMethodId', '[0-9]+');
         Route::post('/earnings/payment-method/{paymentMethod}/default', [\App\Http\Controllers\Athlete\EarningsController::class, 'setDefaultPaymentMethod'])->name('earnings.payment-method.default');
+        
+        // Stripe Connect OAuth routes
+        Route::get('/earnings/stripe-connect/initiate', [\App\Http\Controllers\Athlete\EarningsController::class, 'initiateStripeConnect'])->name('earnings.stripe-connect.initiate');
+        Route::get('/earnings/stripe-connect/callback/{athlete}', [\App\Http\Controllers\Athlete\EarningsController::class, 'handleStripeConnectCallback'])->name('earnings.stripe-connect.callback');
+        Route::get('/earnings/stripe-connect/refresh/{athlete}', [\App\Http\Controllers\Athlete\EarningsController::class, 'handleStripeConnectRefresh'])->name('earnings.stripe-connect.refresh');
         
         // Notifications routes
         Route::get('/notifications', [\App\Http\Controllers\Athlete\NotificationController::class, 'index'])->name('notifications.index');
