@@ -41,8 +41,10 @@ class StripeFeesController extends Controller
      */
     public function verifyStripe()
     {
-        $key = env('STRIPE_KEY');
-        $secret = env('STRIPE_SECRET');
+        // Use config() which reads from config/services.php (works with cached config)
+        // Fallback to env() only if config is not cached
+        $key = config('services.stripe.key') ?: env('STRIPE_KEY');
+        $secret = config('services.stripe.secret') ?: env('STRIPE_SECRET');
         $isLocalOrDevelopment = in_array(config('app.env'), ['local', 'development']);
         
         $errors = [];

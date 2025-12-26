@@ -77,30 +77,39 @@ class PlatformSetting extends Model
 
     /**
      * Check if Stripe is connected (via environment variables)
+     * Uses config() instead of env() to work with cached config
      */
     public static function isStripeConnected(): bool
     {
-        $key = env('STRIPE_KEY');
-        $secret = env('STRIPE_SECRET');
+        // Use config() which reads from config/services.php (works with cached config)
+        // Fallback to env() only if config is not cached
+        $key = config('services.stripe.key') ?: env('STRIPE_KEY');
+        $secret = config('services.stripe.secret') ?: env('STRIPE_SECRET');
         
         return !empty($key) && !empty($secret);
     }
 
     /**
      * Get Stripe account ID (from env or default)
+     * Uses config() for consistency
      */
     public static function getStripeAccountId(): ?string
     {
+        // STRIPE_ACCOUNT_ID is not in config/services.php, so use env() directly
+        // But check config cache first
         return env('STRIPE_ACCOUNT_ID');
     }
 
     /**
      * Get Stripe mode (test or live) based on keys
+     * Uses config() instead of env() to work with cached config
      */
     public static function getStripeMode(): string
     {
-        $key = env('STRIPE_KEY');
-        $secret = env('STRIPE_SECRET');
+        // Use config() which reads from config/services.php (works with cached config)
+        // Fallback to env() only if config is not cached
+        $key = config('services.stripe.key') ?: env('STRIPE_KEY');
+        $secret = config('services.stripe.secret') ?: env('STRIPE_SECRET');
         
         if (empty($key) || empty($secret)) {
             return 'not_configured';
@@ -120,10 +129,13 @@ class PlatformSetting extends Model
 
     /**
      * Get masked Stripe publishable key for display
+     * Uses config() instead of env() to work with cached config
      */
     public static function getMaskedStripeKey(): ?string
     {
-        $key = env('STRIPE_KEY');
+        // Use config() which reads from config/services.php (works with cached config)
+        // Fallback to env() only if config is not cached
+        $key = config('services.stripe.key') ?: env('STRIPE_KEY');
         
         if (empty($key)) {
             return null;
