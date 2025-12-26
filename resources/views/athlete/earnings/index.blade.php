@@ -156,12 +156,12 @@
                                         <span class="text-error font-semibold">This action cannot be undone.</span> You will need to reconnect your Stripe account to receive future payouts.
                                     </p>
                                     <div class="modal-action">
-                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}">
+                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}" class="inline">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-error">Delete Account</button>
                                         </form>
-                                        <form method="dialog">
+                                        <form method="dialog" class="inline">
                                             <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
                                         </form>
                                     </div>

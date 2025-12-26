@@ -377,62 +377,103 @@ class EarningsController extends Controller
      */
     public function destroyPaymentMethod($paymentMethodId)
     {
-        $athlete = Auth::guard('athlete')->user();
+        try {
+            $athlete = Auth::guard('athlete')->user();
 
-        // Find the payment method and ensure it belongs to athlete
-        $paymentMethod = AthletePaymentMethod::where('id', $paymentMethodId)
-            ->where('athlete_id', $athlete->id)
-            ->firstOrFail();
+            Log::info('Attempting to delete athlete payment method', [
+                'athlete_id' => $athlete->id,
+                'payment_method_id' => $paymentMethodId,
+            ]);
 
-        // Check if there are pending withdrawals using this method
-        $pendingWithdrawals = $paymentMethod->withdrawals()
-            ->whereIn('status', ['pending', 'processing'])
-            ->count();
+            // Find the payment method and ensure it belongs to athlete
+            $paymentMethod = AthletePaymentMethod::where('id', $paymentMethodId)
+                ->where('athlete_id', $athlete->id)
+                ->first();
 
-        if ($pendingWithdrawals > 0) {
-            return redirect()->back()
-                ->withErrors(['error' => 'Cannot delete payment method with pending withdrawals.']);
-        }
+            if (!$paymentMethod) {
+                Log::warning('Payment method not found or does not belong to athlete', [
+                    'athlete_id' => $athlete->id,
+                    'payment_method_id' => $paymentMethodId,
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Payment method not found or you do not have permission to delete it.'
+                ]);
+            }
 
-        // Store account ID before deletion for comparison
-        $accountIdToDelete = $paymentMethod->provider_account_id;
+            // Check if there are pending withdrawals using this method
+            $pendingWithdrawals = $paymentMethod->withdrawals()
+                ->whereIn('status', ['pending', 'processing'])
+                ->count();
 
-        // Actually delete the payment method record
-        $paymentMethod->delete();
+            if ($pendingWithdrawals > 0) {
+                return redirect()->back()
+                    ->withErrors(['error' => 'Cannot delete payment method with pending withdrawals.']);
+            }
 
-        // Refresh athlete to get latest data
-        $athlete->refresh();
+            // Store account ID before deletion for comparison
+            $accountIdToDelete = $paymentMethod->provider_account_id;
 
-        // If this payment method's account ID matches the athlete's stripe_account_id, clear it
-        // Also check if this was the only active payment method - if so, clear athlete's stripe_account_id
-        if ($athlete->stripe_account_id === $accountIdToDelete) {
-            // Check if there are any other active payment methods
-            $hasOtherActiveMethods = AthletePaymentMethod::where('athlete_id', $athlete->id)
-                ->where('is_active', true)
-                ->exists();
-            
-            if (!$hasOtherActiveMethods) {
-                // No other active payment methods, clear the athlete's stripe_account_id
-                $athlete->update(['stripe_account_id' => null]);
-            } else {
-                // Get the account ID from another active payment method
-                $otherPaymentMethod = AthletePaymentMethod::where('athlete_id', $athlete->id)
+            // Actually delete the payment method record
+            $paymentMethod->delete();
+
+            // Refresh athlete to get latest data
+            $athlete->refresh();
+
+            // If this payment method's account ID matches the athlete's stripe_account_id, clear it
+            // Also check if this was the only active payment method - if so, clear athlete's stripe_account_id
+            if ($athlete->stripe_account_id === $accountIdToDelete) {
+                // Check if there are any other active payment methods
+                $hasOtherActiveMethods = AthletePaymentMethod::where('athlete_id', $athlete->id)
                     ->where('is_active', true)
-                    ->whereNotNull('provider_account_id')
-                    ->orderBy('is_default', 'desc')
-                    ->orderBy('created_at', 'desc')
-                    ->first();
+                    ->exists();
                 
-                if ($otherPaymentMethod && $otherPaymentMethod->provider_account_id) {
-                    $athlete->update(['stripe_account_id' => $otherPaymentMethod->provider_account_id]);
-                } else {
+                if (!$hasOtherActiveMethods) {
+                    // No other active payment methods, clear the athlete's stripe_account_id
                     $athlete->update(['stripe_account_id' => null]);
+                } else {
+                    // Get the account ID from another active payment method
+                    $otherPaymentMethod = AthletePaymentMethod::where('athlete_id', $athlete->id)
+                        ->where('is_active', true)
+                        ->whereNotNull('provider_account_id')
+                        ->orderBy('is_default', 'desc')
+                        ->orderBy('created_at', 'desc')
+                        ->first();
+                    
+                    if ($otherPaymentMethod && $otherPaymentMethod->provider_account_id) {
+                        $athlete->update(['stripe_account_id' => $otherPaymentMethod->provider_account_id]);
+                    } else {
+                        $athlete->update(['stripe_account_id' => null]);
+                    }
                 }
             }
-        }
 
-        return redirect()->route('athlete.earnings.index')
-            ->with('success', 'Stripe account deleted successfully.');
+            Log::info('Payment method deleted successfully', [
+                'athlete_id' => $athlete->id,
+                'payment_method_id' => $paymentMethodId,
+                'stripe_account_id' => $accountIdToDelete,
+            ]);
+
+            return redirect()->route('athlete.earnings.index')
+                ->with('success', 'Stripe account deleted successfully.');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::error('Payment method not found for deletion', [
+                'payment_method_id' => $paymentMethodId,
+                'error' => $e->getMessage(),
+            ]);
+            return redirect()->back()->withErrors([
+                'error' => 'Payment method not found.'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete payment method', [
+                'payment_method_id' => $paymentMethodId,
+                'athlete_id' => $athlete->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return redirect()->back()->withErrors([
+                'error' => 'Failed to delete payment method: ' . $e->getMessage()
+            ]);
+        }
     }
 
     /**
