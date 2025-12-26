@@ -88,7 +88,7 @@
                 <div class="grid md:grid-cols-3 gap-10">
                     <!-- Step 1 -->
                     <div class="text-center">
-                        <div class="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-black mb-2">
+                        <div class="inline-flex items-center justify-center rounded-full border-2 border-black mb-2" style="width: 56px; height: 56px; padding: 0;">
                             <span class="text-xl font-bold text-black">1</span>
                         </div>
                         <h3 class="text-lg font-semibold text-black mb-2">Create a Deal</h3>
@@ -99,7 +99,7 @@
                     
                     <!-- Step 2 -->
                     <div class="text-center">
-                        <div class="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-black mb-2">
+                        <div class="inline-flex items-center justify-center rounded-full border-2 border-black mb-2" style="width: 56px; height: 56px; padding: 0;">
                             <span class="text-xl font-bold text-black">2</span>
                         </div>
                         <h3 class="text-lg font-semibold text-black mb-2">Athlete Delivers</h3>
@@ -110,7 +110,7 @@
                     
                     <!-- Step 3 -->
                     <div class="text-center">
-                        <div class="inline-flex items-center justify-center w-14 h-14 rounded-full border-2 border-black mb-2">
+                        <div class="inline-flex items-center justify-center rounded-full border-2 border-black mb-2" style="width: 56px; height: 56px; padding: 0;">
                             <span class="text-xl font-bold text-black">3</span>
                         </div>
                         <h3 class="text-lg font-semibold text-black mb-2">Review & Pay</h3>
