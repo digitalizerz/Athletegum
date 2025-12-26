@@ -91,7 +91,11 @@
                                         @if($deal->status === 'pending')
                                             <span class="badge badge-warning">Pending</span>
                                         @elseif($deal->status === 'accepted')
-                                            <span class="badge badge-info">Active</span>
+                                            @if($deal->hasPendingRevisions())
+                                                <span class="badge badge-warning">Revisions Needed</span>
+                                            @else
+                                                <span class="badge badge-info">Active</span>
+                                            @endif
                                         @elseif($deal->status === 'completed')
                                             @if($deal->is_approved && $deal->released_at)
                                                 <span class="badge badge-success">Paid</span>
@@ -115,12 +119,28 @@
                                                     <span class="sr-only">View</span>
                                                 </a>
                                             @elseif($deal->status === 'accepted')
-                                                <a href="{{ route('athlete.deals.submit', $deal) }}" class="btn btn-sm btn-primary" title="Submit Deliverables">
+                                                <a href="{{ route('athlete.deals.show', $deal) }}" class="btn btn-sm btn-ghost" title="View Details">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                     </svg>
-                                                    <span class="sr-only">Submit</span>
+                                                    <span class="sr-only">View</span>
                                                 </a>
+                                                @if($deal->hasPendingRevisions())
+                                                    <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-sm btn-warning" title="Submit Revised Deliverables">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                        <span class="ml-1">Revise</span>
+                                                    </a>
+                                                @else
+                                                    <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-sm btn-primary" title="Submit Deliverables">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <span class="sr-only">Submit</span>
+                                                    </a>
+                                                @endif
                                                 <a href="{{ route('athlete.deals.messages', $deal) }}" class="btn btn-sm btn-ghost" title="Messages">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />

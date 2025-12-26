@@ -62,6 +62,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/deals/create/payment', [PaymentController::class, 'processDealPayment'])->name('deals.create.payment.store');
     Route::get('/deals/review', [DealController::class, 'review'])->name('deals.review');
     Route::post('/deals', [DealController::class, 'store'])->name('deals.store');
+    Route::post('/deals/save-draft', [DealController::class, 'saveDraft'])->name('deals.save-draft');
+    Route::get('/deals/{deal}/resume', [DealController::class, 'resumeDraft'])->name('deals.resume-draft');
     Route::get('/deals/{deal}/success', [DealController::class, 'success'])->name('deals.success');
     Route::post('/deals/{deal}/approve', [\App\Http\Controllers\DealApprovalController::class, 'approve'])->name('deals.approve');
     Route::post('/deals/{deal}/request-revisions', [\App\Http\Controllers\DealApprovalController::class, 'requestRevisions'])->name('deals.request-revisions');
@@ -125,7 +127,7 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         // Deals routes
         Route::get('/deals', [\App\Http\Controllers\Athlete\DealController::class, 'index'])->name('deals.index');
         Route::get('/deals/{deal}', [\App\Http\Controllers\Athlete\DealController::class, 'show'])->name('deals.show');
-        Route::get('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'showSubmit'])->name('deals.submit');
+        Route::get('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'showSubmit'])->name('deals.submit.show');
         Route::post('/deals/{deal}/submit', [\App\Http\Controllers\Athlete\DealController::class, 'submitDeliverables'])->name('deals.submit.store');
         Route::get('/deals/{deal}/cancel', [\App\Http\Controllers\Athlete\DealController::class, 'showCancel'])->name('deals.cancel');
         Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\Athlete\DealController::class, 'cancel'])->name('deals.cancel.store');

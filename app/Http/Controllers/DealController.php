@@ -18,6 +18,9 @@ class DealController extends Controller
         // Apply filters
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        } else {
+            // By default, exclude drafts unless specifically filtered
+            // This can be changed if you want drafts shown by default
         }
 
         if ($request->filled('deal_type')) {
@@ -41,9 +44,54 @@ class DealController extends Controller
 
     public function create()
     {
+        $user = Auth::user();
+        
+        // Check if business info is complete
+        $hasCompleteInfo = $this->hasCompleteBusinessInfo($user);
+        
         return view('deals.create-type', [
             'dealTypes' => Deal::getDealTypes(),
+            'hasCompleteBusinessInfo' => $hasCompleteInfo,
         ]);
+    }
+
+    /**
+     * Check if user has complete business and address information
+     */
+    private function hasCompleteBusinessInfo($user): bool
+    {
+        // Required business fields
+        $requiredBusinessFields = [
+            'business_name',
+            'business_information',
+            'owner_principal',
+            'phone',
+        ];
+        
+        // Required address fields
+        $requiredAddressFields = [
+            'address_line1',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+        ];
+        
+        // Check if all required business fields are filled
+        foreach ($requiredBusinessFields as $field) {
+            if (empty($user->$field)) {
+                return false;
+            }
+        }
+        
+        // Check if all required address fields are filled
+        foreach ($requiredAddressFields as $field) {
+            if (empty($user->$field)) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 
     public function storeType(Request $request)
@@ -223,13 +271,8 @@ class DealController extends Controller
         $request->session()->put('contract_text', $request->contract_text ?? '');
         $request->session()->put('contract_signed', true);
 
-        // Check if user has payment methods
-        $paymentMethods = Auth::user()->paymentMethods()->where('is_active', true)->get();
-        
-        if ($paymentMethods->isEmpty()) {
-            return redirect()->route('payment-methods.create')->with('info', 'Please add a payment method before creating a deal.');
-        }
-
+        // Don't block - allow proceeding to payment step
+        // Payment method check will happen before final submission
         return redirect()->route('deals.create.payment');
     }
 
@@ -242,10 +285,6 @@ class DealController extends Controller
         }
 
         $paymentMethods = Auth::user()->paymentMethods()->where('is_active', true)->orderBy('is_default', 'desc')->get();
-        
-        if ($paymentMethods->isEmpty()) {
-            return redirect()->route('payment-methods.create')->with('info', 'Please add a payment method before creating a deal.');
-        }
 
         // Calculate payment breakdown using SMB platform fee
         $compensationAmount = (float) $session->get('compensation_amount');
@@ -285,6 +324,10 @@ class DealController extends Controller
         if (!$session->has('deal_type') || !$session->has('compensation_amount') || !$session->has('deadline')) {
             return redirect()->route('deals.create');
         }
+
+        // Check if user has payment methods - required before final submission
+        $paymentMethods = Auth::user()->paymentMethods()->where('is_active', true)->get();
+        $hasPaymentMethod = $paymentMethods->isNotEmpty();
 
         $dealTypes = Deal::getDealTypes();
         $dealType = $session->get('deal_type');
@@ -328,6 +371,7 @@ class DealController extends Controller
             'walletAmountUsed' => $walletAmountUsed,
             'cardAmount' => $cardAmount,
             'cardPaymentMethod' => $cardPaymentMethod,
+            'hasPaymentMethod' => $hasPaymentMethod,
         ]);
     }
 
@@ -382,6 +426,14 @@ class DealController extends Controller
         $paymentIntentId = $session->get('payment_intent_id');
         $paymentStatus = $session->get('payment_status', 'pending');
 
+        // Check if user has payment methods - required before final submission
+        $paymentMethods = Auth::user()->paymentMethods()->where('is_active', true)->get();
+        if ($paymentMethods->isEmpty()) {
+            return redirect()->route('deals.review')->withErrors([
+                'error' => 'Please add a payment method before submitting the deal. You can save your progress as a draft and come back later.'
+            ]);
+        }
+
         // Validate payment was processed
         // For wallet payments, status must be 'paid'
         // For Stripe payments, status can be 'pending' (webhook will confirm)
@@ -421,45 +473,68 @@ class DealController extends Controller
         // Get athlete email from session (if provided during deal creation)
         $athleteEmail = $session->get('athlete_email');
 
-        $deal = Deal::create([
-            'user_id' => Auth::id(),
-            'payment_method_id' => $cardPaymentMethodId, // Store card payment method if used
-            'deal_type' => $dealType,
-            'platforms' => $platforms,
-            'compensation_amount' => $compensationAmount,
-            'platform_fee_percentage' => $platformFeePercentage,
-            'platform_fee_amount' => $platformFeeAmount,
-            'escrow_amount' => $escrowAmount,
-            'total_amount' => $totalAmount,
-            'deadline' => $deadline,
-            'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
-            'frequency' => $frequency,
-            'notes' => $notes ?? null,
-            'attachments' => !empty($attachments) ? $attachments : null,
-            'contract_text' => $contractText,
-            'contract_signed' => $contractSigned,
-            'contract_signed_at' => $contractSigned ? now() : null,
-            'status' => 'pending',
-            'payment_status' => $paymentStatus, // 'paid' for wallet, 'pending' or 'paid' for Stripe
-            'payment_intent_id' => $paymentIntentId,
-            'paid_at' => $paymentStatus === 'paid' ? now() : null,
-        ]);
-
-        // Create deal invitation (required for identity guardrails)
-        // For now, if no email provided, we'll create invitation without email (backward compatibility)
-        // In production, athlete_email should be required
-        $athlete = null;
-        if ($athleteEmail) {
-            // Check if athlete already exists
-            $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
+        // Check if we're resuming a draft (deal ID in session)
+        $draftId = $session->get('resuming_draft_id');
+        $existingDraft = null;
+        if ($draftId) {
+            $existingDraft = Deal::where('id', $draftId)
+                ->where('user_id', Auth::id())
+                ->where('status', 'draft')
+                ->first();
         }
 
-        \App\Models\DealInvitation::create([
-            'deal_id' => $deal->id,
-            'athlete_email' => $athleteEmail,
-            'athlete_id' => $athlete?->id,
-            'status' => 'pending',
-        ]);
+        if ($existingDraft) {
+            // Update existing draft to final deal
+            $existingDraft->update([
+                'payment_method_id' => $cardPaymentMethodId,
+                'status' => 'pending',
+                'payment_status' => $paymentStatus,
+                'payment_intent_id' => $paymentIntentId,
+                'paid_at' => $paymentStatus === 'paid' ? now() : null,
+            ]);
+            $deal = $existingDraft;
+        } else {
+            // Create new deal
+            $deal = Deal::create([
+                'user_id' => Auth::id(),
+                'payment_method_id' => $cardPaymentMethodId, // Store card payment method if used
+                'deal_type' => $dealType,
+                'platforms' => $platforms,
+                'compensation_amount' => $compensationAmount,
+                'platform_fee_percentage' => $platformFeePercentage,
+                'platform_fee_amount' => $platformFeeAmount,
+                'escrow_amount' => $escrowAmount,
+                'total_amount' => $totalAmount,
+                'deadline' => $deadline,
+                'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
+                'frequency' => $frequency,
+                'notes' => $notes ?? null,
+                'attachments' => !empty($attachments) ? $attachments : null,
+                'contract_text' => $contractText,
+                'contract_signed' => $contractSigned,
+                'contract_signed_at' => $contractSigned ? now() : null,
+                'status' => 'pending',
+                'payment_status' => $paymentStatus, // 'paid' for wallet, 'pending' or 'paid' for Stripe
+                'payment_intent_id' => $paymentIntentId,
+                'paid_at' => $paymentStatus === 'paid' ? now() : null,
+            ]);
+
+            // Create deal invitation (required for identity guardrails)
+            // For now, if no email provided, we'll create invitation without email (backward compatibility)
+            // In production, athlete_email should be required
+            $athlete = null;
+            if ($athleteEmail) {
+                // Check if athlete already exists
+                $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
+            }
+
+            \App\Models\DealInvitation::create([
+                'deal_id' => $deal->id,
+                'athlete_email' => $athleteEmail,
+                'athlete_id' => $athlete?->id,
+                'status' => 'pending',
+            ]);
+        }
 
         // Create wallet transaction for the deal payment (if wallet was used)
         if ($walletAmountUsed > 0) {
@@ -494,7 +569,8 @@ class DealController extends Controller
             'frequency', 'notes', 'attachments', 'contract_text', 'contract_signed',
             'payment_method', 'payment_method_id', 'card_payment_method_id', 'wallet_amount_used', 'card_amount',
             'platform_fee_percentage', 'platform_fee_amount', 'platform_fee_type', 'platform_fee_value',
-            'escrow_amount', 'total_amount', 'payment_intent_id', 'payment_status', 'athlete_email'
+            'escrow_amount', 'total_amount', 'payment_intent_id', 'payment_status', 'athlete_email',
+            'resuming_draft_id'
         ]);
 
         return redirect()->route('deals.success', $deal);
@@ -507,9 +583,153 @@ class DealController extends Controller
             abort(403);
         }
 
+        // Load athlete and messages relationships for deliverables and revision checks
+        $deal->load(['athlete', 'messages']);
+
         return view('deals.success', [
             'deal' => $deal,
         ]);
+    }
+
+    /**
+     * Save deal as draft (without payment)
+     */
+    public function saveDraft(Request $request)
+    {
+        $session = $request->session();
+        
+        // Validate minimum required data
+        if (!$session->has('deal_type') || !$session->has('compensation_amount') || !$session->has('deadline')) {
+            return redirect()->route('deals.create')->withErrors(['error' => 'Incomplete deal information. Please fill in all required fields.']);
+        }
+
+        // Get all session data
+        $dealType = $session->get('deal_type');
+        $compensationAmount = $session->get('compensation_amount');
+        $deadline = $session->get('deadline');
+        $deadlineTime = $session->get('deadline_time');
+        $frequency = $session->get('frequency', 'one-time');
+        $platforms = $session->get('platforms', []);
+        $notes = $session->get('notes');
+        $attachments = $session->get('attachments', []);
+        $contractText = $session->get('contract_text');
+        $contractSigned = $session->get('contract_signed', false);
+        $athleteEmail = $session->get('athlete_email');
+
+        // Calculate payment breakdown
+        $smbFee = \App\Models\PlatformSetting::getSMBPlatformFee();
+        if ($smbFee['type'] === 'percentage') {
+            $platformFeeAmount = round($compensationAmount * ($smbFee['value'] / 100), 2);
+            $platformFeePercentage = $smbFee['value'];
+        } else {
+            $platformFeeAmount = round($smbFee['value'], 2);
+            $platformFeePercentage = null;
+        }
+        $escrowAmount = round($compensationAmount, 2);
+        $totalAmount = round($compensationAmount + $platformFeeAmount, 2);
+
+        // Create or update draft deal
+        $draft = Deal::where('user_id', Auth::id())
+            ->where('status', 'draft')
+            ->where('deal_type', $dealType)
+            ->latest()
+            ->first();
+
+        if ($draft) {
+            // Update existing draft
+            $draft->update([
+                'platforms' => $platforms,
+                'compensation_amount' => $compensationAmount,
+                'platform_fee_percentage' => $platformFeePercentage,
+                'platform_fee_amount' => $platformFeeAmount,
+                'escrow_amount' => $escrowAmount,
+                'total_amount' => $totalAmount,
+                'deadline' => $deadline,
+                'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
+                'frequency' => $frequency,
+                'notes' => $notes ?? null,
+                'attachments' => !empty($attachments) ? $attachments : null,
+                'contract_text' => $contractText,
+                'contract_signed' => $contractSigned,
+                'contract_signed_at' => $contractSigned ? now() : null,
+            ]);
+        } else {
+            // Create new draft
+            $draft = Deal::create([
+                'user_id' => Auth::id(),
+                'deal_type' => $dealType,
+                'platforms' => $platforms,
+                'compensation_amount' => $compensationAmount,
+                'platform_fee_percentage' => $platformFeePercentage,
+                'platform_fee_amount' => $platformFeeAmount,
+                'escrow_amount' => $escrowAmount,
+                'total_amount' => $totalAmount,
+                'deadline' => $deadline,
+                'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
+                'frequency' => $frequency,
+                'notes' => $notes ?? null,
+                'attachments' => !empty($attachments) ? $attachments : null,
+                'contract_text' => $contractText,
+                'contract_signed' => $contractSigned,
+                'contract_signed_at' => $contractSigned ? now() : null,
+                'status' => 'draft',
+                'payment_status' => null,
+            ]);
+
+            // Create draft invitation if email provided
+            if ($athleteEmail) {
+                $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
+                \App\Models\DealInvitation::create([
+                    'deal_id' => $draft->id,
+                    'athlete_email' => $athleteEmail,
+                    'athlete_id' => $athlete?->id,
+                    'status' => 'pending',
+                ]);
+            }
+        }
+
+        return redirect()->route('deals.index')->with('success', 'Deal saved as draft. You can resume it later after adding a payment method.');
+    }
+
+    /**
+     * Resume a draft deal
+     */
+    public function resumeDraft(Deal $deal)
+    {
+        // Ensure the deal belongs to the authenticated user and is a draft
+        if ($deal->user_id !== Auth::id() || $deal->status !== 'draft') {
+            abort(403);
+        }
+
+        $session = session();
+
+        // Load draft data into session
+        $session->put('deal_type', $deal->deal_type);
+        $session->put('platforms', $deal->platforms ?? []);
+        $session->put('compensation_amount', $deal->compensation_amount);
+        $session->put('deadline', $deal->deadline->format('Y-m-d'));
+        $session->put('deadline_time', $deal->deadline_time ? substr($deal->deadline_time, 0, 5) : null);
+        $session->put('frequency', $deal->frequency ?? 'one-time');
+        $session->put('notes', $deal->notes ?? '');
+        $session->put('attachments', $deal->attachments ?? []);
+        $session->put('contract_text', $deal->contract_text ?? '');
+        $session->put('contract_signed', $deal->contract_signed ?? false);
+        $session->put('platform_fee_percentage', $deal->platform_fee_percentage);
+        $session->put('platform_fee_amount', $deal->platform_fee_amount);
+        $session->put('escrow_amount', $deal->escrow_amount);
+        $session->put('total_amount', $deal->total_amount);
+
+        // Get athlete email from invitation if exists
+        $invitation = $deal->invitations()->first();
+        if ($invitation && $invitation->athlete_email) {
+            $session->put('athlete_email', $invitation->athlete_email);
+        }
+
+        // Mark that we're resuming a draft (so store method can update instead of create)
+        $session->put('resuming_draft_id', $deal->id);
+
+        // Redirect to payment step (where they can proceed to review)
+        return redirect()->route('deals.create.payment');
     }
 
     /**

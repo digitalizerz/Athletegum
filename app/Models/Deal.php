@@ -296,4 +296,46 @@ class Deal extends Model
 
         return now()->isAfter($this->deadline) && !$this->is_approved;
     }
+
+    /**
+     * Check if revisions have been requested for this deal
+     * A deal has pending revisions if:
+     * - Status is 'accepted' (deal was reset after submission)
+     * - There's a recent system message about revision request
+     * - The deal has been completed before (has completed_at)
+     */
+    public function hasPendingRevisions(): bool
+    {
+        // If status is not 'accepted', no pending revisions
+        if ($this->status !== 'accepted') {
+            return false;
+        }
+
+        // If deal was never completed, it can't have revisions requested
+        if (!$this->completed_at) {
+            return false;
+        }
+
+        // Check if there's a revision request message after the last completion
+        $revisionMessage = $this->messages()
+            ->where('is_system_message', true)
+            ->where('content', 'like', 'Business requested revisions:%')
+            ->where('created_at', '>=', $this->completed_at)
+            ->latest()
+            ->first();
+
+        return $revisionMessage !== null;
+    }
+
+    /**
+     * Get the most recent revision request message
+     */
+    public function getLatestRevisionRequest(): ?Message
+    {
+        return $this->messages()
+            ->where('is_system_message', true)
+            ->where('content', 'like', 'Business requested revisions:%')
+            ->latest()
+            ->first();
+    }
 }

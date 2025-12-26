@@ -11,7 +11,11 @@
                 <div class="card-body">
                     <h3 class="text-lg font-semibold mb-5">What do you need?</h3>
 
-                    <form method="POST" action="{{ route('deals.create.type') }}" x-data="{ selected: null }">
+                    <form method="POST" action="{{ route('deals.create.type') }}" 
+                          x-data="{ selected: null }"
+                          @if(!$hasCompleteBusinessInfo)
+                          @submit.prevent="document.getElementById('business-profile-modal').showModal()"
+                          @endif>
                         @csrf
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
@@ -59,6 +63,35 @@
                             </button>
                         </div>
                     </form>
+
+                    <!-- Business Profile Incomplete Modal -->
+                    @if(!$hasCompleteBusinessInfo)
+                        <dialog id="business-profile-modal" class="modal">
+                            <div class="modal-box">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <svg class="w-6 h-6 text-warning flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                    </svg>
+                                    <h3 class="font-bold text-lg">Complete Your Business Profile</h3>
+                                </div>
+                                <p class="mb-6 text-base-content/70">
+                                    You cannot create a deal because your business profile is incomplete. 
+                                    Please complete your business information and address before creating deals.
+                                </p>
+                                <div class="modal-action">
+                                    <a href="{{ route('profile.edit') }}" class="btn btn-primary">
+                                        Complete Business Profile
+                                    </a>
+                                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('business-profile-modal').close()">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                            <form method="dialog" class="modal-backdrop">
+                                <button>close</button>
+                            </form>
+                        </dialog>
+                    @endif
                 </div>
             </div>
         </div>

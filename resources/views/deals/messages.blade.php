@@ -1,3 +1,7 @@
+@php
+use Illuminate\Support\Facades\Storage;
+@endphp
+
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
@@ -59,6 +63,54 @@
                 </div>
             </div>
         </div>
+
+        <!-- Deliverables Section -->
+        @if($deal->completed_at && !empty($deal->deliverables))
+            <div class="card bg-base-100 shadow-sm mb-6">
+                <div class="card-body">
+                    <h3 class="text-lg font-semibold mb-4">Submitted Deliverables</h3>
+                    
+                    @if($deal->completion_notes)
+                        <div class="mb-4">
+                            <div class="text-sm font-semibold text-base-content/60 mb-2">Completion Notes</div>
+                            <div class="bg-base-200 rounded-lg p-4 whitespace-pre-wrap text-sm">{{ $deal->completion_notes }}</div>
+                        </div>
+                    @endif
+
+                    <div class="space-y-3">
+                        @foreach($deal->deliverables as $deliverable)
+                            <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg border border-base-300">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <svg class="w-5 h-5 text-base-content/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium truncate">{{ $deliverable['original_name'] ?? basename($deliverable['path'] ?? '') }}</div>
+                                        @if(isset($deliverable['size']))
+                                            <div class="text-xs text-base-content/60">{{ number_format($deliverable['size'] / 1024, 1) }} KB</div>
+                                        @endif
+                                    </div>
+                                </div>
+                                @if(isset($deliverable['path']))
+                                    <a href="{{ Storage::url($deliverable['path']) }}" target="_blank" class="btn btn-ghost btn-sm ml-3 flex-shrink-0">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Download
+                                    </a>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+
+                    @if($deal->completed_at)
+                        <div class="mt-4 pt-4 border-t border-base-300 text-xs text-base-content/60">
+                            Submitted on {{ $deal->completed_at->format('M j, Y \a\t g:i A') }}
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
 
         <!-- Messages Thread -->
         <div class="card bg-base-100 shadow-sm mb-6">

@@ -114,11 +114,11 @@
                                             </div>
                                             @if($cardPaymentMethod)
                                                 <div class="flex items-center space-x-2 pl-8">
-                                                    @if($cardPaymentMethod->card_brand === 'visa')
+                                                    @if($cardPaymentMethod->brand === 'visa')
                                                         <div class="w-10 h-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">VISA</div>
-                                                    @elseif($cardPaymentMethod->card_brand === 'mastercard')
+                                                    @elseif($cardPaymentMethod->brand === 'mastercard')
                                                         <div class="w-10 h-6 bg-red-600 rounded flex items-center justify-center text-white font-bold text-xs">MC</div>
-                                                    @elseif($cardPaymentMethod->card_brand === 'amex')
+                                                    @elseif($cardPaymentMethod->brand === 'amex')
                                                         <div class="w-10 h-6 bg-blue-500 rounded flex items-center justify-center text-white font-bold text-xs">AMEX</div>
                                                     @else
                                                         <div class="w-10 h-6 bg-base-300 rounded flex items-center justify-center text-base-content/60 font-bold text-xs">CARD</div>
@@ -129,16 +129,16 @@
                                         </div>
                                     @elseif($paymentMethod === 'card' && $cardPaymentMethod)
                                         <div class="flex items-center space-x-2">
-                                            @if($cardPaymentMethod->card_brand === 'visa')
+                                            @if($cardPaymentMethod->brand === 'visa')
                                                 <div class="w-10 h-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">VISA</div>
-                                            @elseif($cardPaymentMethod->card_brand === 'mastercard')
+                                            @elseif($cardPaymentMethod->brand === 'mastercard')
                                                 <div class="w-10 h-6 bg-red-600 rounded flex items-center justify-center text-white font-bold text-xs">MC</div>
-                                            @elseif($cardPaymentMethod->card_brand === 'amex')
+                                            @elseif($cardPaymentMethod->brand === 'amex')
                                                 <div class="w-10 h-6 bg-blue-500 rounded flex items-center justify-center text-white font-bold text-xs">AMEX</div>
                                             @else
                                                 <div class="w-10 h-6 bg-base-300 rounded flex items-center justify-center text-base-content/60 font-bold text-xs">CARD</div>
                                             @endif
-                                            <span class="text-sm font-medium">•••• {{ $cardPaymentMethod->card_last_four }} - ${{ number_format($totalAmount, 2) }}</span>
+                                            <span class="text-sm font-medium">•••• {{ $cardPaymentMethod->last_four }} - ${{ number_format($totalAmount, 2) }}</span>
                                         </div>
                                     @endif
                                 </div>
@@ -169,7 +169,27 @@
                         @endif
                     </div>
 
-                    <form method="POST" action="{{ route('deals.store') }}">
+                    {{-- Payment Method Warning --}}
+                    @if(!$hasPaymentMethod)
+                        <div class="alert alert-warning mb-6">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div>
+                                <h3 class="font-bold">Payment Method Required</h3>
+                                <div class="text-sm">
+                                    You need to add a payment method before submitting this deal to an athlete. You can save your progress as a draft and come back later.
+                                </div>
+                                <div class="mt-2">
+                                    <a href="{{ route('payment-methods.create') }}" class="btn btn-sm btn-primary">
+                                        Add Payment Method
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    <form method="POST" action="{{ route('deals.store') }}" id="submit-form">
                         @csrf
                         <input type="hidden" name="deal_type" value="{{ $dealType }}">
                         @if(!empty($platforms))
@@ -185,9 +205,23 @@
                             <a href="{{ route('deals.create.payment') }}" class="btn btn-ghost btn-sm">
                                 ← Back
                             </a>
-                            <button type="submit" class="btn btn-primary">
-                                Pay & Create Deal
-                            </button>
+                            <div class="flex gap-2">
+                                <form method="POST" action="{{ route('deals.save-draft') }}" class="inline">
+                                    @csrf
+                                    <button type="submit" class="btn btn-outline btn-sm">
+                                        Save as Draft
+                                    </button>
+                                </form>
+                                @if($hasPaymentMethod)
+                                    <button type="submit" class="btn btn-primary">
+                                        Pay & Create Deal
+                                    </button>
+                                @else
+                                    <button type="button" class="btn btn-primary btn-disabled" disabled>
+                                        Pay & Create Deal
+                                    </button>
+                                @endif
+                            </div>
                         </div>
                     </form>
                 </div>

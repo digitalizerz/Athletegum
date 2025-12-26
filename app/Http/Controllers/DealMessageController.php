@@ -47,6 +47,9 @@ class DealMessageController extends Controller
             return redirect()->route('deals.index')->withErrors(['error' => 'Messaging is only available after the athlete accepts the deal.']);
         }
 
+        // Eager load athlete relationship for deliverables display
+        $deal->load('athlete');
+
         $messages = $deal->messages()->with(['sender', 'athleteSender'])->get();
 
         // Mark messages from athletes as read by this user

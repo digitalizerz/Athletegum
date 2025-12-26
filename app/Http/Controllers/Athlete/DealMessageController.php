@@ -48,6 +48,9 @@ class DealMessageController extends Controller
             return redirect()->route('athlete.deals.index')->withErrors(['error' => 'Messaging is only available after accepting the deal.']);
         }
 
+        // Eager load messages relationship for revision checks
+        $deal->load('messages');
+
         $messages = $deal->messages()->with(['sender', 'athleteSender'])->get();
 
         // Mark messages from SMBs as read by this athlete

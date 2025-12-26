@@ -430,29 +430,78 @@ class PaymentController extends Controller
             // For wallet payments, we cannot release via Stripe Transfer
             $chargeId = null;
             $isStripePayment = false;
+            $paymentIntentStatus = null;
             
             // Check if this is a Stripe payment (payment_intent_id starts with 'pi_')
             // Wallet payments have payment_intent_id like 'wallet_xxxxx'
             if ($deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_')) {
                 $isStripePayment = true;
                 try {
-                    $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id);
-                    if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
-                        $chargeId = $paymentIntent->charges->data[0]->id;
-                    } else {
-                        Log::warning('PaymentIntent found but no charges available', [
+                    // Always expand charges to ensure we get the charge ID
+                    $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id, ['expand' => ['charges']]);
+                    $paymentIntentStatus = $paymentIntent->status;
+                    
+                    Log::info('PaymentIntent retrieved for release', [
+                        'deal_id' => $deal->id,
+                        'payment_intent_id' => $deal->payment_intent_id,
+                        'payment_intent_status' => $paymentIntentStatus,
+                        'has_charges' => $paymentIntent->charges ? count($paymentIntent->charges->data) : 0,
+                    ]);
+                    
+                    // Check if PaymentIntent succeeded
+                    if ($paymentIntentStatus !== 'succeeded') {
+                        Log::warning('PaymentIntent is not succeeded, cannot release payment', [
                             'deal_id' => $deal->id,
                             'payment_intent_id' => $deal->payment_intent_id,
-                            'payment_intent_status' => $paymentIntent->status ?? 'unknown',
+                            'payment_intent_status' => $paymentIntentStatus,
+                        ]);
+                        DB::rollBack();
+                        return redirect()->back()->withErrors([
+                            'error' => 'Cannot release payment: The payment has not completed successfully. Payment status: ' . $paymentIntentStatus . '. Please wait a few minutes and try again, or contact support if the issue persists.'
                         ]);
                     }
-                } catch (\Exception $e) {
-                    Log::error('Failed to retrieve PaymentIntent for release', [
+                    
+                    // Get charge ID from succeeded PaymentIntent
+                    if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
+                        $chargeId = $paymentIntent->charges->data[0]->id;
+                        Log::info('Charge ID extracted from PaymentIntent', [
+                            'deal_id' => $deal->id,
+                            'charge_id' => $chargeId,
+                        ]);
+                    } else {
+                        Log::warning('PaymentIntent succeeded but no charges available', [
+                            'deal_id' => $deal->id,
+                            'payment_intent_id' => $deal->payment_intent_id,
+                            'payment_intent_status' => $paymentIntentStatus,
+                        ]);
+                    }
+                } catch (\Stripe\Exception\InvalidRequestException $e) {
+                    Log::error('Failed to retrieve PaymentIntent for release - InvalidRequestException', [
                         'deal_id' => $deal->id,
                         'payment_intent_id' => $deal->payment_intent_id,
                         'error' => $e->getMessage(),
+                        'stripe_error_code' => $e->getStripeCode(),
                     ]);
-                    // Will be caught below - chargeId will be null, which will trigger error
+                    DB::rollBack();
+                    if (str_contains($e->getMessage(), 'No such payment_intent')) {
+                        return redirect()->back()->withErrors([
+                            'error' => 'Cannot release payment: The payment record could not be found in Stripe. This may indicate the payment was not properly processed. Please contact support.'
+                        ]);
+                    }
+                    return redirect()->back()->withErrors([
+                        'error' => 'Cannot release payment: Failed to verify payment in Stripe. ' . $e->getMessage()
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to retrieve PaymentIntent for release - unexpected error', [
+                        'deal_id' => $deal->id,
+                        'payment_intent_id' => $deal->payment_intent_id,
+                        'error' => $e->getMessage(),
+                        'error_type' => get_class($e),
+                    ]);
+                    DB::rollBack();
+                    return redirect()->back()->withErrors([
+                        'error' => 'Cannot release payment: Failed to retrieve payment information. Please contact support.'
+                    ]);
                 }
             } else {
                 // This is a wallet payment (payment_intent_id doesn't start with 'pi_')

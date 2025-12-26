@@ -46,7 +46,8 @@ class DealController extends Controller
             });
         }
         
-        $deals = $query->paginate(15);
+        // Eager load messages to check for revision requests
+        $deals = $query->with('messages')->paginate(15);
         
         return view('athlete.deals.index', [
             'deals' => $deals,
@@ -180,6 +181,9 @@ class DealController extends Controller
         if ($deal->athlete_id !== $athlete->id) {
             abort(403);
         }
+
+        // Eager load messages to check for revision requests
+        $deal->load('messages');
 
         return view('athlete.deals.show', [
             'deal' => $deal,

@@ -128,11 +128,18 @@ class StripeService
 
     /**
      * Retrieve a PaymentIntent from Stripe
+     * 
+     * @param string $paymentIntentId The PaymentIntent ID
+     * @param array $expandParams Additional parameters for expanding related objects (e.g., ['expand' => ['charges']])
      */
-    public function getPaymentIntent(string $paymentIntentId): PaymentIntent
+    public function getPaymentIntent(string $paymentIntentId, array $params = []): PaymentIntent
     {
         if (!$this->isConfigured()) {
             throw new \Exception('Stripe is not configured');
+        }
+
+        if (!empty($params)) {
+            return PaymentIntent::retrieve($paymentIntentId, $params);
         }
 
         return PaymentIntent::retrieve($paymentIntentId);

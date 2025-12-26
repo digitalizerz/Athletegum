@@ -108,6 +108,7 @@
                         class="select select-bordered select-sm"
                     >
                         <option value="">All Statuses</option>
+                        <option value="draft">Draft</option>
                         <option value="pending">Pending</option>
                         <option value="accepted">Accepted</option>
                         <option value="completed">Completed</option>
@@ -261,6 +262,7 @@
                                     <td>
                                         @php
                                             $statusBadges = [
+                                                'draft' => 'badge-ghost',
                                                 'pending' => 'badge-warning',
                                                 'accepted' => 'badge-info',
                                                 'active' => 'badge-info',
@@ -287,20 +289,26 @@
                                     </td>
                                     <td>
                                         <div class="flex items-center justify-end gap-2">
-                                            <a href="{{ route('deals.success', $deal) }}" class="btn btn-ghost btn-xs btn-square" title="View">
-                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                </svg>
-                                            </a>
-                                            @if($deal->athlete_id && $deal->status !== 'pending')
+                                            @if($deal->status === 'draft')
+                                                <a href="{{ route('deals.resume-draft', $deal) }}" class="btn btn-primary btn-xs" title="Resume Draft">
+                                                    Resume
+                                                </a>
+                                            @else
+                                                <a href="{{ route('deals.success', $deal) }}" class="btn btn-ghost btn-xs btn-square" title="View">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                    </svg>
+                                                </a>
+                                            @endif
+                                            @if($deal->athlete_id && $deal->status !== 'pending' && $deal->status !== 'draft')
                                                 <a href="{{ route('deals.messages', $deal) }}" class="btn btn-ghost btn-xs btn-square" title="Messages">
                                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                                                     </svg>
                                                 </a>
                                             @endif
-                                            @if(!in_array($deal->status, ['completed', 'cancelled']) && !$deal->released_at)
+                                            @if(!in_array($deal->status, ['completed', 'cancelled', 'draft']) && !$deal->released_at)
                                                 <a href="{{ route('deals.edit', $deal) }}" class="btn btn-ghost btn-xs btn-square" title="Edit">
                                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -386,40 +394,62 @@
                 @click.away="showRequestRevisionModal = false"
                 class="modal"
                 :class="{ 'modal-open': showRequestRevisionModal }">
-            <div class="modal-box">
-                <h3 class="font-bold text-lg text-warning">Request Revisions</h3>
-                <p class="py-4 text-sm">
-                    Send this deal back to the athlete for updates. They will be able to submit revised deliverables.
-                </p>
+            <div class="modal-box max-w-2xl">
                 <form method="POST" :action="'{{ url('/deals') }}/' + requestRevisionDealId + '/request-revisions'" id="request-revision-form">
                     @csrf
-                    <div class="form-control mb-4">
-                        <label class="label">
-                            <span class="label-text font-semibold">Revision Notes <span class="text-error">*</span></span>
-                            <span class="label-text-alt">Required (10-1000 characters)</span>
+                    
+                    {{-- Header Section --}}
+                    <div class="mb-6">
+                        <h3 class="font-bold text-xl text-base-content mb-2">Request Revisions</h3>
+                        <p class="text-sm text-base-content/70">
+                            Send this deal back to the athlete with clear feedback on what needs to be updated.
+                        </p>
+                    </div>
+
+                    {{-- Form Area --}}
+                    <div class="form-control mb-6">
+                        <label class="label pb-2">
+                            <span class="label-text font-semibold text-base-content">
+                                Revision Notes <span class="text-error">*</span>
+                                <span class="font-normal text-base-content/60 text-xs ml-2">(Required)</span>
+                            </span>
                         </label>
+                        <p class="text-sm text-base-content/60 mb-3">
+                            Be specific so the athlete can quickly make the requested changes.
+                        </p>
                         <textarea
                             name="revision_notes"
-                            class="textarea textarea-bordered h-32 @error('revision_notes') textarea-error @enderror"
-                            placeholder="Please provide specific feedback on what needs to be revised..."
+                            class="textarea textarea-bordered w-full h-32 resize-none @error('revision_notes') textarea-error @enderror"
+                            placeholder="Please adjust the caption to include our brand hashtag and resubmit the Instagram post link."
                             required
                             minlength="10"
                             maxlength="1000"
                         >{{ old('revision_notes') }}</textarea>
-                        <label class="label">
-                            <span class="label-text-alt text-base-content/60">
-                                This feedback will be shared with the athlete and stored in the deal messages.
+                        <label class="label pt-1">
+                            <span class="label-text-alt text-base-content/50">
+                                10-1000 characters
                             </span>
                         </label>
                         @error('revision_notes')
-                            <label class="label">
+                            <label class="label pt-1">
                                 <span class="label-text-alt text-error">{{ $message }}</span>
                             </label>
                         @enderror
                     </div>
-                    <div class="modal-action">
-                        <button type="submit" class="btn btn-warning">Request Revisions</button>
-                        <button type="button" @click="showRequestRevisionModal = false" class="btn btn-ghost">Cancel</button>
+
+                    {{-- Footer Section --}}
+                    <div class="pt-4 border-t border-base-300">
+                        <p class="text-xs text-base-content/60 mb-4">
+                            This message will be shared with the athlete and saved in the deal conversation.
+                        </p>
+                        <div class="flex justify-end gap-3">
+                            <button type="button" @click="showRequestRevisionModal = false" class="btn btn-ghost">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                Request Revisions
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>

@@ -122,7 +122,7 @@
             <div class="card-body">
                 <h3 class="text-lg font-semibold mb-4">Submit Your Work</h3>
                 
-                <form method="POST" action="{{ route('athlete.deals.submit', $deal) }}" enctype="multipart/form-data">
+                <form method="POST" action="{{ route('athlete.deals.submit.store', $deal) }}" enctype="multipart/form-data">
                     @csrf
 
                     <div class="mb-6">

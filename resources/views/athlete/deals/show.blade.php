@@ -7,6 +7,34 @@
 
     <div class="py-6">
         <div class="max-w-4xl mx-auto space-y-6">
+            <!-- Revision Request Alert -->
+            @if($deal->hasPendingRevisions())
+                @php
+                    $revisionMessage = $deal->getLatestRevisionRequest();
+                    $revisionNotes = $revisionMessage ? str_replace('Business requested revisions: ', '', $revisionMessage->content) : '';
+                @endphp
+                <div class="alert alert-warning">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div class="flex-1">
+                        <h3 class="font-bold mb-2">Revisions Requested</h3>
+                        @if($revisionNotes)
+                            <div class="bg-base-100 rounded-lg p-4 mb-3 border border-warning/30">
+                                <div class="text-sm font-semibold text-base-content/80 mb-2">Feedback from Business:</div>
+                                <div class="text-sm text-base-content whitespace-pre-wrap">{{ $revisionNotes }}</div>
+                            </div>
+                        @endif
+                        <p class="text-sm mb-3">Please review the feedback above and submit updated deliverables.</p>
+                        <div>
+                            <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-warning btn-sm">
+                                Submit Revised Deliverables
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Deal Summary Card -->
             <div class="card bg-base-100 shadow-sm">
                 <div class="card-body">
@@ -25,7 +53,11 @@
                                     ];
                                     $statusColor = $statusColors[$deal->status] ?? 'badge-ghost';
                                 @endphp
-                                <span class="badge {{ $statusColor }}">{{ ucfirst($deal->status) }}</span>
+                                @if($deal->hasPendingRevisions())
+                                    <span class="badge badge-warning">Revisions Needed</span>
+                                @else
+                                    <span class="badge {{ $statusColor }}">{{ ucfirst($deal->status) }}</span>
+                                @endif
                                 @if($deal->payment_status === 'paid')
                                     <span class="badge badge-success">Payment Received</span>
                                 @endif
@@ -175,13 +207,22 @@
                     Back to Deals
                 </a>
 
-                @if($deal->status === 'accepted' && !$deal->completed_at && !$deal->released_at)
-                    <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-primary">
-                        Submit Deliverables
-                    </a>
+                @if($deal->status === 'accepted' && !$deal->released_at)
+                    @if($deal->hasPendingRevisions())
+                        <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-warning">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Submit Revised Deliverables
+                        </a>
+                    @else
+                        <a href="{{ route('athlete.deals.submit.show', $deal) }}" class="btn btn-primary">
+                            Submit Deliverables
+                        </a>
+                    @endif
                 @endif
 
-                @if($deal->status === 'accepted' && !$deal->completed_at && !$deal->released_at)
+                @if($deal->status === 'accepted' && !$deal->released_at)
                     <a href="{{ route('athlete.deals.cancel', $deal) }}" class="btn btn-outline btn-error">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
