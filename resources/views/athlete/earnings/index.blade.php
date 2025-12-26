@@ -159,7 +159,7 @@
                                         <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}" class="inline">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-error">Delete Account</button>
+                                            <button type="submit" class="btn btn-error" onclick="console.log('Submitting delete form for payment method {{ $method->id }}'); return true;">Delete Account</button>
                                         </form>
                                         <form method="dialog" class="inline">
                                             <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
