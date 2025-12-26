@@ -142,6 +142,7 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::get('/earnings/payment-method/create', [\App\Http\Controllers\Athlete\EarningsController::class, 'createPaymentMethod'])->name('earnings.payment-method.create');
         Route::post('/earnings/payment-method', [\App\Http\Controllers\Athlete\EarningsController::class, 'storePaymentMethod'])->name('earnings.payment-method.store');
         Route::delete('/earnings/payment-method/{paymentMethodId}', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethod'])->name('earnings.payment-method.destroy')->where('paymentMethodId', '[0-9]+');
+        Route::get('/earnings/payment-method/{paymentMethodId}/delete', [\App\Http\Controllers\Athlete\EarningsController::class, 'destroyPaymentMethodGet'])->name('earnings.payment-method.destroy.get')->where('paymentMethodId', '[0-9]+');
         Route::post('/earnings/payment-method/{paymentMethod}/default', [\App\Http\Controllers\Athlete\EarningsController::class, 'setDefaultPaymentMethod'])->name('earnings.payment-method.default');
         
         // Stripe Connect OAuth routes

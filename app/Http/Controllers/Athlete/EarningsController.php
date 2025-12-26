@@ -377,8 +377,22 @@ class EarningsController extends Controller
      */
     public function destroyPaymentMethod(Request $request, $paymentMethodId)
     {
+        // Log immediately when method is called
+        Log::info('=== destroyPaymentMethod CALLED ===', [
+            'payment_method_id' => $paymentMethodId,
+            'request_method' => $request->method(),
+            'request_url' => $request->fullUrl(),
+            'request_headers' => $request->headers->all(),
+        ]);
+        
         try {
             $athlete = Auth::guard('athlete')->user();
+            
+            if (!$athlete) {
+                Log::error('No authenticated athlete found');
+                return redirect()->route('athlete.login')
+                    ->withErrors(['error' => 'You must be logged in to perform this action.']);
+            }
 
             Log::info('Attempting to delete athlete payment method', [
                 'athlete_id' => $athlete->id,
@@ -387,6 +401,7 @@ class EarningsController extends Controller
                 'is_ajax' => $request->ajax(),
                 'user_agent' => $request->userAgent(),
                 'ip' => $request->ip(),
+                'csrf_token' => $request->header('X-CSRF-TOKEN') ? 'present' : 'missing',
             ]);
 
             // Find the payment method and ensure it belongs to athlete
@@ -422,33 +437,36 @@ class EarningsController extends Controller
             $accountIdToDelete = $paymentMethod->provider_account_id;
 
             // CRITICAL: The foreign key constraint uses 'restrict', which means we MUST delete
-            // or update all related withdrawals before deleting the payment method
+            // ALL related withdrawals before deleting the payment method
             // Otherwise, the database will prevent deletion
             $allWithdrawals = $paymentMethod->withdrawals()->get();
             $withdrawalCount = $allWithdrawals->count();
             
             if ($withdrawalCount > 0) {
-                Log::info('Found withdrawals associated with payment method, updating them before deletion', [
+                Log::info('Found withdrawals associated with payment method, deleting them before deletion', [
                     'payment_method_id' => $paymentMethodId,
                     'withdrawal_count' => $withdrawalCount,
+                    'withdrawal_statuses' => $allWithdrawals->pluck('status')->toArray(),
                 ]);
                 
-                // Update withdrawals to set payment_method_id to null (if column allows)
-                // OR delete completed/failed withdrawals
-                // Since the constraint is 'restrict', we need to delete them
                 try {
-                    // Delete completed, failed, or cancelled withdrawals
-                    $deletedCount = $paymentMethod->withdrawals()
-                        ->whereIn('status', ['completed', 'failed', 'cancelled'])
+                    // Delete ALL withdrawals (not just completed/failed) since constraint is 'restrict'
+                    // We already checked for pending/processing above, so these should be safe to delete
+                    // Use DB facade to ensure direct deletion
+                    $deletedCount = DB::table('athlete_withdrawals')
+                        ->where('athlete_payment_method_id', $paymentMethodId)
                         ->delete();
                     
-                    Log::info('Deleted completed/failed withdrawals', [
+                    Log::info('Deleted all withdrawals associated with payment method', [
                         'payment_method_id' => $paymentMethodId,
                         'deleted_count' => $deletedCount,
                     ]);
                     
-                    // If there are still withdrawals (shouldn't happen if we checked pending above)
-                    $remainingWithdrawals = $paymentMethod->withdrawals()->count();
+                    // Verify deletion was successful
+                    $remainingWithdrawals = DB::table('athlete_withdrawals')
+                        ->where('athlete_payment_method_id', $paymentMethodId)
+                        ->count();
+                    
                     if ($remainingWithdrawals > 0) {
                         Log::error('Still have withdrawals after cleanup - cannot delete payment method', [
                             'payment_method_id' => $paymentMethodId,
@@ -461,28 +479,49 @@ class EarningsController extends Controller
                     Log::error('Failed to clean up withdrawals before deletion', [
                         'payment_method_id' => $paymentMethodId,
                         'error' => $e->getMessage(),
+                        'error_code' => $e->getCode(),
+                        'sql_state' => $e->getCode(),
                     ]);
                     return redirect()->back()
-                        ->withErrors(['error' => 'Failed to delete payment method due to database constraints. Please contact support.']);
+                        ->withErrors(['error' => 'Failed to delete payment method due to database constraints: ' . $e->getMessage()]);
                 }
             }
 
             // Actually delete the payment method record
+            // Use DB facade for direct deletion to avoid any model-level issues or caching
             try {
-                $paymentMethod->delete();
+                $deleted = DB::table('athlete_payment_methods')
+                    ->where('id', $paymentMethodId)
+                    ->where('athlete_id', $athlete->id)
+                    ->delete();
+                
+                if ($deleted === 0) {
+                    Log::warning('Payment method deletion returned 0 rows affected', [
+                        'payment_method_id' => $paymentMethodId,
+                        'athlete_id' => $athlete->id,
+                    ]);
+                    return redirect()->back()
+                        ->withErrors(['error' => 'Payment method could not be deleted. It may have already been deleted or does not exist.']);
+                }
+                
                 Log::info('Payment method record deleted from database', [
                     'payment_method_id' => $paymentMethodId,
+                    'rows_deleted' => $deleted,
                 ]);
             } catch (\Exception $e) {
                 Log::error('Failed to delete payment method record', [
                     'payment_method_id' => $paymentMethodId,
+                    'athlete_id' => $athlete->id,
                     'error' => $e->getMessage(),
                     'error_code' => $e->getCode(),
-                    'sql_state' => $e->getCode() === '23000' ? 'Foreign key constraint violation' : 'Unknown',
+                    'error_trace' => substr($e->getTraceAsString(), 0, 500), // Limit trace length
                 ]);
                 
                 // Check if it's a foreign key constraint error
-                if (str_contains($e->getMessage(), 'foreign key') || str_contains($e->getMessage(), '1451')) {
+                if (str_contains($e->getMessage(), 'foreign key') || 
+                    str_contains($e->getMessage(), '1451') || 
+                    str_contains($e->getMessage(), '23000') ||
+                    $e->getCode() === 23000) {
                     return redirect()->back()
                         ->withErrors(['error' => 'Cannot delete payment method because it is still referenced by withdrawal records. Please contact support.']);
                 }
@@ -495,28 +534,41 @@ class EarningsController extends Controller
 
             // If this payment method's account ID matches the athlete's stripe_account_id, clear it
             // Also check if this was the only active payment method - if so, clear athlete's stripe_account_id
-            if ($athlete->stripe_account_id === $accountIdToDelete) {
-                // Check if there are any other active payment methods
-                $hasOtherActiveMethods = AthletePaymentMethod::where('athlete_id', $athlete->id)
+            if ($accountIdToDelete && $athlete->stripe_account_id === $accountIdToDelete) {
+                // Check if there are any other active payment methods using DB facade
+                $hasOtherActiveMethods = DB::table('athlete_payment_methods')
+                    ->where('athlete_id', $athlete->id)
                     ->where('is_active', true)
+                    ->where('id', '!=', $paymentMethodId) // Exclude the one we just deleted
                     ->exists();
                 
                 if (!$hasOtherActiveMethods) {
                     // No other active payment methods, clear the athlete's stripe_account_id
-                    $athlete->update(['stripe_account_id' => null]);
+                    DB::table('athletes')
+                        ->where('id', $athlete->id)
+                        ->update(['stripe_account_id' => null]);
+                    $athlete->refresh();
                 } else {
                     // Get the account ID from another active payment method
-                    $otherPaymentMethod = AthletePaymentMethod::where('athlete_id', $athlete->id)
+                    $otherPaymentMethod = DB::table('athlete_payment_methods')
+                        ->where('athlete_id', $athlete->id)
                         ->where('is_active', true)
+                        ->where('id', '!=', $paymentMethodId)
                         ->whereNotNull('provider_account_id')
                         ->orderBy('is_default', 'desc')
                         ->orderBy('created_at', 'desc')
                         ->first();
                     
                     if ($otherPaymentMethod && $otherPaymentMethod->provider_account_id) {
-                        $athlete->update(['stripe_account_id' => $otherPaymentMethod->provider_account_id]);
+                        DB::table('athletes')
+                            ->where('id', $athlete->id)
+                            ->update(['stripe_account_id' => $otherPaymentMethod->provider_account_id]);
+                        $athlete->refresh();
                     } else {
-                        $athlete->update(['stripe_account_id' => null]);
+                        DB::table('athletes')
+                            ->where('id', $athlete->id)
+                            ->update(['stripe_account_id' => null]);
+                        $athlete->refresh();
                     }
                 }
             }
@@ -548,6 +600,22 @@ class EarningsController extends Controller
                 'error' => 'Failed to delete payment method: ' . $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Delete payment method via GET (fallback method for production issues)
+     * This is a simpler approach that avoids form submission issues
+     */
+    public function destroyPaymentMethodGet(Request $request, $paymentMethodId)
+    {
+        // Require confirmation token to prevent accidental deletions
+        if (!$request->has('confirm') || $request->get('confirm') !== 'yes') {
+            return redirect()->route('athlete.earnings.index')
+                ->withErrors(['error' => 'Deletion requires confirmation. Please use the delete button in the modal.']);
+        }
+
+        // Use the same logic as the POST method
+        return $this->destroyPaymentMethod($request, $paymentMethodId);
     }
 
     /**

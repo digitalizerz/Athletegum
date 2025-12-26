@@ -23,6 +23,22 @@
             </div>
         @endif
 
+        @if($errors->any())
+            <div role="alert" class="alert alert-error">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                    <h3 class="font-bold">Error</h3>
+                    <div class="text-xs">
+                        @foreach($errors->all() as $error)
+                            <div>{{ $error }}</div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <!-- Earnings Summary Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -156,15 +172,60 @@
                                         <span class="text-error font-semibold">This action cannot be undone.</span> You will need to reconnect your Stripe account to receive future payouts.
                                     </p>
                                     <div class="modal-action">
-                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}" class="inline">
+                                        <form method="POST" action="{{ route('athlete.earnings.payment-method.destroy', $method->id) }}" id="delete-form-{{ $method->id }}">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-error" onclick="console.log('Submitting delete form for payment method {{ $method->id }}'); return true;">Delete Account</button>
+                                            <button type="submit" class="btn btn-error" id="delete-submit-btn-{{ $method->id }}">Delete Account</button>
                                         </form>
-                                        <form method="dialog" class="inline">
-                                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
-                                        </form>
+                                        <a href="{{ route('athlete.earnings.payment-method.destroy.get', ['paymentMethodId' => $method->id, 'confirm' => 'yes']) }}" 
+                                           class="btn btn-error btn-outline" 
+                                           onclick="return confirm('Are you sure you want to delete this Stripe account? This action cannot be undone.');"
+                                           id="delete-link-{{ $method->id }}"
+                                           style="display: none;">Delete Account (Alternative)</a>
+                                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('delete-modal-{{ $method->id }}').close()">Cancel</button>
                                     </div>
+                                    <script>
+                                        (function() {
+                                            const formId = 'delete-form-{{ $method->id }}';
+                                            const submitBtnId = 'delete-submit-btn-{{ $method->id }}';
+                                            const deleteLinkId = 'delete-link-{{ $method->id }}';
+                                            
+                                            function initForm() {
+                                                const form = document.getElementById(formId);
+                                                const submitBtn = document.getElementById(submitBtnId);
+                                                const deleteLink = document.getElementById(deleteLinkId);
+                                                
+                                                if (!form || !submitBtn) {
+                                                    console.error('Form elements not found', { formId, submitBtnId });
+                                                    return;
+                                                }
+                                                
+                                                // Try form submission first
+                                                form.addEventListener('submit', function(e) {
+                                                    console.log('Form submit event triggered for payment method {{ $method->id }}');
+                                                    submitBtn.disabled = true;
+                                                    submitBtn.textContent = 'Deleting...';
+                                                    
+                                                    // If form doesn't submit within 2 seconds, show alternative link
+                                                    setTimeout(function() {
+                                                        if (submitBtn.disabled && submitBtn.textContent === 'Deleting...') {
+                                                            console.warn('Form submission may have failed, showing alternative method');
+                                                            if (deleteLink) {
+                                                                deleteLink.style.display = 'inline-block';
+                                                                submitBtn.style.display = 'none';
+                                                            }
+                                                        }
+                                                    }, 2000);
+                                                });
+                                            }
+                                            
+                                            if (document.readyState === 'loading') {
+                                                document.addEventListener('DOMContentLoaded', initForm);
+                                            } else {
+                                                initForm();
+                                            }
+                                        })();
+                                    </script>
                                 </div>
                                 <form method="dialog" class="modal-backdrop">
                                     <button>close</button>
