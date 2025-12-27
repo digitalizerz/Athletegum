@@ -12,7 +12,13 @@ class CustomPasswordResetNotification extends ResetPassword
      */
     public function toMail($notifiable)
     {
-        $resetUrl = url(route('password.reset', [
+        // Determine if this is an athlete or regular user based on the model class
+        // Athletes use 'athlete.password.reset', regular users use 'password.reset'
+        $routeName = get_class($notifiable) === \App\Models\Athlete::class 
+            ? 'athlete.password.reset' 
+            : 'password.reset';
+            
+        $resetUrl = url(route($routeName, [
             'token' => $this->token,
             'email' => $notifiable->getEmailForPasswordReset(),
         ], false));
