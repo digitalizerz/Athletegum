@@ -273,13 +273,13 @@
                     <x-athletegum-logo size="sm" text-color="white" />
                     
                     <div class="flex flex-wrap justify-center gap-4 text-sm text-white/50">
-                        <a href="#" class="hover:text-white transition">About</a>
+                        <a href="{{ route('pages.about') }}" class="hover:text-white transition">About</a>
                         <span class="text-white/30">·</span>
-                        <a href="#" class="hover:text-white transition">Terms</a>
+                        <a href="{{ route('pages.terms') }}" class="hover:text-white transition">Terms</a>
                         <span class="text-white/30">·</span>
-                        <a href="#" class="hover:text-white transition">Privacy</a>
+                        <a href="{{ route('pages.privacy') }}" class="hover:text-white transition">Privacy</a>
                         <span class="text-white/30">·</span>
-                        <a href="#" class="hover:text-white transition">Contact</a>
+                        <a href="{{ route('pages.contact') }}" class="hover:text-white transition">Contact</a>
                     </div>
                 </div>
                 

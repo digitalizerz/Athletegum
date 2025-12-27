@@ -28,6 +28,42 @@ Route::get('/', function () {
     return view('welcome');
 })->name('welcome');
 
+// Static Pages
+Route::prefix('pages')->name('pages.')->group(function () {
+    Route::get('/about', function () {
+        return view('pages.about');
+    })->name('about');
+    
+    Route::get('/terms', function () {
+        return view('pages.terms');
+    })->name('terms');
+    
+    Route::get('/privacy', function () {
+        return view('pages.privacy');
+    })->name('privacy');
+    
+    Route::get('/contact', function () {
+        return view('pages.contact');
+    })->name('contact');
+});
+
+// Legacy routes for direct access
+Route::get('/about', function () {
+    return redirect()->route('pages.about');
+});
+
+Route::get('/terms', function () {
+    return redirect()->route('pages.terms');
+});
+
+Route::get('/privacy', function () {
+    return redirect()->route('pages.privacy');
+});
+
+Route::get('/contact', function () {
+    return redirect()->route('pages.contact');
+});
+
 Route::get('/dashboard', function () {
     if (Auth::user()->is_superadmin) {
         return redirect()->route('admin.dashboard');

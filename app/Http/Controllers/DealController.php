@@ -528,12 +528,29 @@ class DealController extends Controller
                 $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
             }
 
-            \App\Models\DealInvitation::create([
+            $invitation = \App\Models\DealInvitation::create([
                 'deal_id' => $deal->id,
                 'athlete_email' => $athleteEmail,
                 'athlete_id' => $athlete?->id,
                 'status' => 'pending',
             ]);
+
+            // Send email to athlete if email is provided
+            if ($athleteEmail) {
+                try {
+                    $athleteName = $athlete?->name ?? explode('@', $athleteEmail)[0];
+                    \Illuminate\Support\Facades\Mail::to($athleteEmail)->send(
+                        new \App\Mail\NewDealCreatedMail($athleteName, $deal)
+                    );
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send deal creation email', [
+                        'deal_id' => $deal->id,
+                        'athlete_email' => $athleteEmail,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the deal creation if email fails
+                }
+            }
         }
 
         // Create wallet transaction for the deal payment (if wallet was used)

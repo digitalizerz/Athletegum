@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Notifications\CustomPasswordResetNotification;
+use App\Notifications\CustomVerifyEmailNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -160,6 +162,22 @@ class Athlete extends Authenticatable
     public function withdrawals()
     {
         return $this->hasMany(\App\Models\AthleteWithdrawal::class);
+    }
+
+    /**
+     * Send the password reset notification.
+     */
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new CustomPasswordResetNotification($token));
+    }
+
+    /**
+     * Send the email verification notification.
+     */
+    public function sendEmailVerificationNotification()
+    {
+        $this->notify(new CustomVerifyEmailNotification);
     }
 
     /**

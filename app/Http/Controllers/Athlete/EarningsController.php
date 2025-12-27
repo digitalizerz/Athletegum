@@ -489,6 +489,22 @@ class EarningsController extends Controller
 
             DB::commit();
 
+            // Send email to athlete
+            try {
+                if ($athlete->email) {
+                    \Illuminate\Support\Facades\Mail::to($athlete->email)->send(
+                        new \App\Mail\WithdrawalRequestedMail($athlete->name, $validated['amount'])
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send withdrawal request email', [
+                    'athlete_id' => $athlete->id,
+                    'withdrawal_id' => $withdrawal->id ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the withdrawal request if email fails
+            }
+
             return redirect()->route('athlete.earnings.index')
                 ->with('success', 'Withdrawal request submitted successfully. It will be processed within 1-3 business days.');
         } catch (\Exception $e) {

@@ -698,6 +698,22 @@ class PaymentController extends Controller
                     route('athlete.earnings.index'),
                     $deal->id
                 );
+
+                // Send email to athlete
+                try {
+                    if ($deal->athlete->email) {
+                        \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
+                            new \App\Mail\PaymentReleasedMail($deal->athlete->name, $deal, $athleteNetPayout)
+                        );
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send payment released email', [
+                        'deal_id' => $deal->id,
+                        'athlete_id' => $deal->athlete_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the payment release if email fails
+                }
             }
 
             DB::commit();

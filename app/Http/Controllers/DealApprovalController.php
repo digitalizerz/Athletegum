@@ -113,7 +113,7 @@ class DealApprovalController extends Controller
             );
 
             // Create notification for athlete
-            if ($deal->athlete_id) {
+            if ($deal->athlete_id && $deal->athlete) {
                 \App\Models\Notification::createForAthlete(
                     $deal->athlete_id,
                     'deal_revision_requested',
@@ -122,6 +122,22 @@ class DealApprovalController extends Controller
                     route('athlete.deals.show', $deal),
                     $deal->id
                 );
+
+                // Send email to athlete
+                try {
+                    if ($deal->athlete->email) {
+                        \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
+                            new \App\Mail\RevisionsRequestedMail($deal->athlete->name, $deal, $validated['revision_notes'])
+                        );
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send revision request email', [
+                        'deal_id' => $deal->id,
+                        'athlete_id' => $deal->athlete_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the revision request if email fails
+                }
             }
 
             DB::commit();

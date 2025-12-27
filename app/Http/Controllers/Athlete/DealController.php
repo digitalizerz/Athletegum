@@ -400,6 +400,24 @@ class DealController extends Controller
                 route('deals.index'),
                 $deal->id
             );
+
+            // Send email to business
+            try {
+                $business = $deal->user;
+                if ($business && $business->email) {
+                    $businessName = $business->business_name ?? $business->name ?? explode('@', $business->email)[0];
+                    \Illuminate\Support\Facades\Mail::to($business->email)->send(
+                        new \App\Mail\DeliverablesSubmittedMail($businessName, $athlete->name, $deal)
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send deliverables submitted email', [
+                    'deal_id' => $deal->id,
+                    'business_id' => $deal->user_id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the submission if email fails
+            }
         }
 
         return redirect()->route('athlete.deals.index')->with('success', 'Deliverables submitted successfully! The business will review and approve your work.');
