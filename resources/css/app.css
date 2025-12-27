@@ -273,33 +273,3 @@ input[type="checkbox"]:checked::after {
     padding: 0.375rem 0.75rem !important; /* py-1.5 px-3 */
     min-height: 1.875rem !important;
 }
-
-/* Force light mode on mobile (viewport < 1024px) */
-/* This ensures dark mode classes never apply on mobile, even if dark class is present */
-@media (max-width: 1023px) {
-    html.dark,
-    html.dark * {
-        /* Override any dark mode background colors on mobile */
-    }
-    
-    /* Prevent dark mode background colors on mobile */
-    html.dark .dark\:bg-gray-900 {
-        background-color: #f9fafb !important; /* bg-gray-50 */
-    }
-    
-    html.dark .dark\:bg-gray-800 {
-        background-color: #ffffff !important; /* bg-white */
-    }
-    
-    html.dark .dark\:text-gray-100 {
-        color: #111827 !important; /* text-gray-900 */
-    }
-    
-    html.dark .dark\:text-gray-300 {
-        color: #111827 !important; /* text-gray-900 */
-    }
-    
-    html.dark .dark\:border-gray-700 {
-        border-color: #e5e7eb !important; /* border-gray-200 */
-    }
-}
