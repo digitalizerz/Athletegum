@@ -27,11 +27,11 @@
 
     <!-- User Menu -->
     <div class="flex items-center space-x-2 sm:space-x-3">
-        <!-- Light/Dark Mode Toggle - Visible on all screen sizes -->
+        <!-- Light/Dark Mode Toggle - Hidden on mobile, visible on desktop -->
         <button 
             @click="toggleTheme()" 
-            class="p-2 rounded-md text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
-            style="min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;"
+            class="hidden lg:flex p-2 rounded-md text-gray-900 lg:dark:text-gray-100 hover:bg-gray-100 lg:dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 items-center justify-center"
+            style="min-width: 44px; min-height: 44px;"
             aria-label="Toggle theme">
             <!-- Sun icon (light mode) - shown when in dark mode (click to switch to light) -->
             <svg x-show="darkMode" class="h-5 w-5 text-gray-900 dark:text-gray-100" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width: 2;">

@@ -4,6 +4,8 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- Force light mode on mobile browsers -->
+        <meta name="color-scheme" content="light">
 
         <title>{{ config('app.name', 'AthleteGum') }}</title>
 
@@ -17,17 +19,28 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
+    <body class="font-sans antialiased bg-gray-50 lg:dark:bg-gray-900">
         <div x-data="{ 
                 sidebarOpen: true,
                 darkMode: false,
                 init() {
-                    // Initialize theme
-                    const savedTheme = localStorage.getItem('theme');
-                    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    this.darkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
-                    if (this.darkMode) {
-                        document.documentElement.classList.add('dark');
+                    // Force light mode on mobile (viewport < 1024px)
+                    const isMobile = window.innerWidth < 1024;
+                    
+                    if (isMobile) {
+                        // Mobile: Always light mode, ignore system preferences
+                        this.darkMode = false;
+                        document.documentElement.classList.remove('dark');
+                    } else {
+                        // Desktop: Respect user preference
+                        const savedTheme = localStorage.getItem('theme');
+                        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                        this.darkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+                        if (this.darkMode) {
+                            document.documentElement.classList.add('dark');
+                        } else {
+                            document.documentElement.classList.remove('dark');
+                        }
                     }
                     
                     // On desktop, check localStorage; on mobile, default to closed
@@ -37,6 +50,24 @@
                     } else {
                         this.sidebarOpen = false;
                     }
+                    
+                    // Listen for viewport changes to handle resize from mobile to desktop
+                    window.addEventListener('resize', () => {
+                        const nowMobile = window.innerWidth < 1024;
+                        if (nowMobile && this.darkMode) {
+                            // Switched to mobile: force light mode
+                            this.darkMode = false;
+                            document.documentElement.classList.remove('dark');
+                        } else if (!nowMobile && !this.darkMode) {
+                            // Switched to desktop: restore preference
+                            const savedTheme = localStorage.getItem('theme');
+                            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                            this.darkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+                            if (this.darkMode) {
+                                document.documentElement.classList.add('dark');
+                            }
+                        }
+                    });
                 },
                 toggleSidebar() {
                     this.sidebarOpen = !this.sidebarOpen;
@@ -45,6 +76,16 @@
                     }
                 },
                 toggleTheme() {
+                    // Prevent dark mode toggle on mobile (viewport < 1024px)
+                    const isMobile = window.innerWidth < 1024;
+                    if (isMobile) {
+                        // Mobile: Always stay in light mode
+                        this.darkMode = false;
+                        document.documentElement.classList.remove('dark');
+                        return;
+                    }
+                    
+                    // Desktop: Allow theme toggle
                     this.darkMode = !this.darkMode;
                     if (this.darkMode) {
                         document.documentElement.classList.add('dark');
@@ -66,9 +107,9 @@
                 @include('layouts.topbar')
 
                 <!-- Page Content -->
-                <main class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+                <main class="flex-1 overflow-y-auto bg-gray-50 lg:dark:bg-gray-900">
                     @isset($header)
-                        <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+                        <div class="bg-white lg:dark:bg-gray-800 shadow-sm border-b border-gray-200 lg:dark:border-gray-700">
                             <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
                                 {{ $header }}
                             </div>
