@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', env('APP_ENV') === 'production' ? 'postmark' : 'log'),
+    'default' => env('MAIL_MAILER', 'smtp'),
 
     /*
     |--------------------------------------------------------------------------
@@ -30,7 +30,7 @@ return [
     | your mailers below. You may also add additional mailers if needed.
     |
     | Supported: "smtp", "sendmail", "mailgun", "ses", "ses-v2",
-    |            "postmark", "resend", "log", "array",
+    |            "resend", "log", "array",
     |            "failover", "roundrobin"
     |
     */
@@ -51,14 +51,6 @@ return [
 
         'ses' => [
             'transport' => 'ses',
-        ],
-
-        'postmark' => [
-            'transport' => 'postmark',
-            // 'message_stream_id' => env('POSTMARK_MESSAGE_STREAM_ID'),
-            // 'client' => [
-            //     'timeout' => 5,
-            // ],
         ],
 
         'resend' => [
@@ -91,8 +83,8 @@ return [
         'roundrobin' => [
             'transport' => 'roundrobin',
             'mailers' => [
+                'smtp',
                 'ses',
-                'postmark',
             ],
             'retry_after' => 60,
         ],
