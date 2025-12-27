@@ -17,10 +17,19 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans antialiased bg-gray-50">
+    <body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
         <div x-data="{ 
                 sidebarOpen: true,
+                darkMode: false,
                 init() {
+                    // Initialize theme
+                    const savedTheme = localStorage.getItem('theme');
+                    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    this.darkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+                    if (this.darkMode) {
+                        document.documentElement.classList.add('dark');
+                    }
+                    
                     // On desktop, check localStorage; on mobile, default to closed
                     if (window.innerWidth >= 1024) {
                         const saved = localStorage.getItem('sidebarOpen');
@@ -33,6 +42,16 @@
                     this.sidebarOpen = !this.sidebarOpen;
                     if (window.innerWidth >= 1024) {
                         localStorage.setItem('sidebarOpen', this.sidebarOpen);
+                    }
+                },
+                toggleTheme() {
+                    this.darkMode = !this.darkMode;
+                    if (this.darkMode) {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('theme', 'dark');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('theme', 'light');
                     }
                 }
             }" 
@@ -47,9 +66,9 @@
                 @include('layouts.topbar')
 
                 <!-- Page Content -->
-                <main class="flex-1 overflow-y-auto bg-gray-50">
+                <main class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
                     @isset($header)
-                        <div class="bg-white shadow-sm border-b border-gray-200">
+                        <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
                             <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
                                 {{ $header }}
                             </div>
@@ -80,4 +99,3 @@
         </div>
     </body>
 </html>
-
