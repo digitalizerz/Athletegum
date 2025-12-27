@@ -29,17 +29,13 @@ class PasswordResetLinkController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        // We will send the password reset link to this user using the Password broker
-        // This creates a token and sends the notification via the Athlete model
-        $status = Password::broker('athletes')->sendResetLink(
+        // Use the athletes broker to query the athletes table
+        Password::broker('athletes')->sendResetLink(
             $request->only('email')
         );
 
-        if ($status === Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
-        }
-
-        return back()->withInput($request->only('email'))
-                    ->withErrors(['email' => __($status)]);
+        // Security: Always return the same success message to prevent user enumeration
+        // Never reveal whether an account exists or not
+        return back()->with('status', 'If an account exists for this email, we\'ve sent a password reset link.');
     }
 }
