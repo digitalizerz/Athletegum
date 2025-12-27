@@ -153,6 +153,14 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
     Route::post('/login', [AthleteAuthController::class, 'login'])->name('login.store');
     Route::post('/logout', [AthleteAuthController::class, 'logout'])->name('logout');
 
+    // Athlete password reset routes
+    Route::middleware('guest:athlete')->group(function () {
+        Route::get('/forgot-password', [\App\Http\Controllers\Athlete\Auth\PasswordResetLinkController::class, 'create'])->name('password.request');
+        Route::post('/forgot-password', [\App\Http\Controllers\Athlete\Auth\PasswordResetLinkController::class, 'store'])->name('password.email');
+        Route::get('/reset-password/{token}', [\App\Http\Controllers\Athlete\Auth\NewPasswordController::class, 'create'])->name('password.reset');
+        Route::post('/reset-password', [\App\Http\Controllers\Athlete\Auth\NewPasswordController::class, 'store'])->name('password.store');
+    });
+
     Route::middleware('auth:athlete')->group(function () {
         Route::get('/dashboard', [AthleteDashboardController::class, 'index'])->name('dashboard');
         

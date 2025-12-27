@@ -74,6 +74,11 @@
                             <input id="remember" type="checkbox" name="remember" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                             <label for="remember" class="ml-2 block text-sm text-gray-700">Remember me</label>
                         </div>
+                        @if (Route::has('athlete.password.request'))
+                            <a href="{{ route('athlete.password.request') }}" class="text-sm text-indigo-600 hover:text-indigo-800">
+                                Forgot password?
+                            </a>
+                        @endif
                     </div>
                 </div>
 
