@@ -4,6 +4,9 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- Prevent browser dark mode on mobile -->
+        <meta name="color-scheme" content="light">
+        <meta name="theme-color" content="#ffffff">
 
         <title>{{ config('app.name', 'AthleteGum') }}</title>
 
@@ -16,10 +19,20 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
-        
+        <script>
+            // Prevent browser dark mode immediately on page load
+            (function() {
+                document.documentElement.style.colorScheme = 'light';
+                document.documentElement.style.backgroundColor = '#ffffff';
+                if (document.body) {
+                    document.body.style.backgroundColor = '#f9fafb';
+                    document.body.style.color = '#111827';
+                }
+            })();
+        </script>
         @stack('styles')
     </head>
-    <body class="font-sans antialiased bg-gray-50">
+    <body class="font-sans antialiased bg-gray-50" style="background-color: #f9fafb !important; color: #111827 !important;">
         <div x-data="{ 
                 sidebarOpen: true,
                 init() {

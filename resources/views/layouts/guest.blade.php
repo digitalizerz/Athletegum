@@ -4,6 +4,9 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- Prevent browser dark mode on mobile -->
+        <meta name="color-scheme" content="light">
+        <meta name="theme-color" content="#ffffff">
 
         <title>{{ config('app.name', 'AthleteGum') }}</title>
 
@@ -16,8 +19,19 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        <script>
+            // Prevent browser dark mode immediately on page load
+            (function() {
+                document.documentElement.style.colorScheme = 'light';
+                document.documentElement.style.backgroundColor = '#ffffff';
+                if (document.body) {
+                    document.body.style.backgroundColor = '#f3f4f6';
+                    document.body.style.color = '#111827';
+                }
+            })();
+        </script>
     </head>
-    <body class="font-sans text-gray-900 antialiased">
+    <body class="font-sans text-gray-900 antialiased" style="background-color: #f3f4f6 !important; color: #111827 !important;">
         <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100">
             <div class="mb-6">
                 <a href="{{ route('welcome') }}">
