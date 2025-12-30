@@ -36,19 +36,25 @@ class PasswordResetLinkController extends Controller
             $status = Password::sendResetLink(
                 $request->only('email')
             );
+            
+            // Log the status for debugging
+            \Log::info('Password reset link sent (business)', [
+                'email' => $request->email,
+                'status' => $status,
+            ]);
         } catch (\Exception $e) {
             // Log the error but don't expose it to the user
-            \Log::error('Password reset email failed', [
+            \Log::error('Password reset email failed (business)', [
                 'email' => $request->email,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             // Return success to prevent user enumeration
             return back()->with('status', 'If an account exists for this email, we\'ve sent a password reset link.');
         }
 
-        return $status == Password::RESET_LINK_SENT
-                    ? back()->with('status', __($status))
-                    : back()->withInput($request->only('email'))
-                        ->withErrors(['email' => __($status)]);
+        // Security: Always return the same success message to prevent user enumeration
+        // Never reveal whether an account exists or not
+        return back()->with('status', 'If an account exists for this email, we\'ve sent a password reset link.');
     }
 }
