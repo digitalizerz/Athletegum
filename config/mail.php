@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'smtp'),
+    'default' => env('MAIL_MAILER', 'sendgrid'),
 
     /*
     |--------------------------------------------------------------------------
@@ -36,6 +36,10 @@ return [
     */
 
     'mailers' => [
+
+        'sendgrid' => [
+            'transport' => 'sendgrid',
+        ],
 
         'smtp' => [
             'transport' => 'smtp',
@@ -74,7 +78,7 @@ return [
         'failover' => [
             'transport' => 'failover',
             'mailers' => [
-                'smtp',
+                'sendgrid',
                 'log',
             ],
             'retry_after' => 60,
