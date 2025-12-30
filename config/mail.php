@@ -14,7 +14,9 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'sendgrid'),
+    // Default mailer: use 'log' for local development, 'sendgrid' for production
+    // You can override this by setting MAIL_MAILER in your .env file
+    'default' => env('MAIL_MAILER', (env('APP_ENV', 'production') === 'local') ? 'log' : 'sendgrid'),
 
     /*
     |--------------------------------------------------------------------------

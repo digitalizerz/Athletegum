@@ -42,18 +42,18 @@ class NewPasswordController extends Controller
         // Here we will attempt to reset the user's password. If it is successful we
         // will update the password on an actual user model and persist it to the
         // database. Otherwise we will parse the error and return the response.
-        try {
-            $status = Password::reset(
-                $request->only('email', 'password', 'password_confirmation', 'token'),
-                function (User $user) use ($request) {
-                    $user->forceFill([
-                        'password' => Hash::make($request->password),
-                        'remember_token' => Str::random(60),
-                    ])->save();
+            try {
+                $status = Password::broker('businesses')->reset(
+                    $request->only('email', 'password', 'password_confirmation', 'token'),
+                    function (User $user) use ($request) {
+                        $user->forceFill([
+                            'password' => Hash::make($request->password),
+                            'remember_token' => Str::random(60),
+                        ])->save();
 
-                    event(new PasswordReset($user));
-                }
-            );
+                        event(new PasswordReset($user));
+                    }
+                );
 
             // Log the status for debugging
             \Log::info('Password reset attempt (business)', [

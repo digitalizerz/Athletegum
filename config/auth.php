@@ -72,6 +72,10 @@ return [
             'driver' => 'eloquent',
             'model' => App\Models\Athlete::class,
         ],
+        'businesses' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Business::class,
+        ],
 
         // 'users' => [
         //     'driver' => 'database',
@@ -107,6 +111,12 @@ return [
         ],
         'athletes' => [
             'provider' => 'athletes',
+            'table' => 'password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+        'businesses' => [
+            'provider' => 'businesses',
             'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
