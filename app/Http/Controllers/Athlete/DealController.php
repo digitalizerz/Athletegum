@@ -281,14 +281,14 @@ class DealController extends Controller
 
             // Create notification for business
             if ($deal->user_id) {
-                \App\Models\Notification::create([
-                    'user_id' => $deal->user_id,
-                    'type' => 'deal_cancelled',
-                    'title' => 'Deal Cancelled',
-                    'message' => "Athlete cancelled deal #{$deal->id}. Reason: " . Str::limit($validated['cancellation_reason'], 100),
-                    'link' => route('deals.index'),
-                    'deal_id' => $deal->id,
-                ]);
+                \App\Models\Notification::createForUser(
+                    $deal->user_id,
+                    'deal_cancelled',
+                    'Deal Cancelled',
+                    "Athlete cancelled deal #{$deal->id}. Reason: " . Str::limit($validated['cancellation_reason'], 100),
+                    route('deals.index'),
+                    $deal->id
+                );
             }
 
             // Note: When athlete cancels, payment is NOT released

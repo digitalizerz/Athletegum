@@ -32,14 +32,21 @@ class PasswordResetLinkController extends Controller
         // Use the athletes broker to query the athletes table
         // Wrap in try-catch to prevent timeouts from blocking the request
         try {
-            Password::broker('athletes')->sendResetLink(
+            $status = Password::broker('athletes')->sendResetLink(
                 $request->only('email')
             );
+            
+            // Log the status for debugging
+            \Log::info('Password reset link sent', [
+                'email' => $request->email,
+                'status' => $status,
+            ]);
         } catch (\Exception $e) {
             // Log the error but don't expose it to the user
             \Log::error('Password reset email failed', [
                 'email' => $request->email,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
 
