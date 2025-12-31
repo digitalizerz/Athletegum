@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\URL;
 
 class CustomVerifyEmailNotification extends VerifyEmail
+{
     /**
      * Build the mail representation of the notification.
      */
