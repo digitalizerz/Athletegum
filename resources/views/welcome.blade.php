@@ -31,7 +31,7 @@
                 <div class="relative" x-data="{ open: false }">
                     <button 
                         @click="open = !open"
-                        class="px-4 py-2 border border-white/20 rounded-lg hover:border-white/40 transition text-sm font-medium"
+                        class="px-4 py-2 border border-white/20 rounded-lg hover:border-white/40 transition text-sm font-medium text-white"
                     >
                         Log in
                     </button>
@@ -61,7 +61,7 @@
         <!-- Hero Section -->
         <section class="bg-black" style="padding-top: 72px; padding-bottom: 56px;">
             <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                <h1 class="text-4xl md:text-5xl font-bold leading-tight mb-4">
+                <h1 class="text-4xl md:text-5xl font-bold leading-tight mb-4 text-white">
                     Pay Athletes for Real Work<br />
                     <span class="text-white/90">Safely and Transparently</span>
                 </h1>
@@ -255,7 +255,7 @@
         <!-- Final CTA Section -->
         <section class="bg-black" style="padding-top: 56px; padding-bottom: 56px;">
             <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                <h2 class="text-3xl md:text-4xl font-bold mb-8">
+                <h2 class="text-3xl md:text-4xl font-bold mb-8 text-white">
                     Start your first deal in minutes
                 </h2>
                 

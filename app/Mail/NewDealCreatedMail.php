@@ -15,7 +15,7 @@ class NewDealCreatedMail extends BaseMailable
 
     protected function getSubject(): string
     {
-        return 'You've received a new deal';
+        return "You've received a new deal";
     }
 
     protected function getView(): string
