@@ -135,6 +135,29 @@ class DealController extends Controller
                     route('deals.messages', $deal),
                     $deal->id
                 );
+
+                // Send email to business
+                try {
+                    $business = $deal->user;
+                    if ($business && $business->email) {
+                        $businessName = $business->business_name ?? $business->name ?? explode('@', $business->email)[0];
+                        \Illuminate\Support\Facades\Mail::to($business->email)->send(
+                            new \App\Mail\DealAcceptedMail($businessName, $athlete->name, $deal)
+                        );
+                        \Log::info('Deal accepted email sent', [
+                            'deal_id' => $deal->id,
+                            'business_email' => $business->email,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send deal accepted email', [
+                        'deal_id' => $deal->id,
+                        'business_id' => $deal->user_id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    // Don't fail the deal acceptance if email fails
+                }
             }
 
             return redirect()->route('athlete.deals.index')->with('success', 'Deal accepted successfully! You can now view it in your deals.');
@@ -166,6 +189,41 @@ class DealController extends Controller
             'contract_signed' => true,
             'contract_signed_at' => now(),
         ]);
+
+        // Create notification and send email to business
+        if ($deal->user_id) {
+            \App\Models\Notification::createForUser(
+                $deal->user_id,
+                'deal_accepted',
+                'Deal Accepted',
+                $athlete->name . ' accepted your deal',
+                route('deals.messages', $deal),
+                $deal->id
+            );
+
+            // Send email to business
+            try {
+                $business = $deal->user;
+                if ($business && $business->email) {
+                    $businessName = $business->business_name ?? $business->name ?? explode('@', $business->email)[0];
+                    \Illuminate\Support\Facades\Mail::to($business->email)->send(
+                        new \App\Mail\DealAcceptedMail($businessName, $athlete->name, $deal)
+                    );
+                    \Log::info('Deal accepted email sent (legacy)', [
+                        'deal_id' => $deal->id,
+                        'business_email' => $business->email,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send deal accepted email (legacy)', [
+                    'deal_id' => $deal->id,
+                    'business_id' => $deal->user_id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                // Don't fail the deal acceptance if email fails
+            }
+        }
 
         return redirect()->route('athlete.deals.index')->with('success', 'Deal accepted successfully! You can now view it in your deals.');
     }
