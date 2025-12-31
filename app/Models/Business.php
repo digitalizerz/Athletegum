@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Notifications\CustomPasswordResetNotification;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -71,10 +71,12 @@ class Business extends Authenticatable
 
     /**
      * Send the password reset notification.
+     * This forces Laravel to send a reset email for business accounts
+     * instead of resolving to the default user broker.
      */
     public function sendPasswordResetNotification($token)
     {
-        $this->notify(new CustomPasswordResetNotification($token));
+        $this->notify(new ResetPassword($token));
     }
 }
 
