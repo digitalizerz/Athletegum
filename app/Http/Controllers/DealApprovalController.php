@@ -20,7 +20,7 @@ class DealApprovalController extends Controller
         }
 
         // Ensure deal is in correct state
-        if ($deal->payment_status !== 'paid') {
+        if ($deal->payment_status !== 'paid' && $deal->payment_status !== 'paid_escrowed') {
             return redirect()->back()->withErrors(['error' => 'Deal payment has not been completed.']);
         }
 
@@ -79,6 +79,11 @@ class DealApprovalController extends Controller
         // Cannot request revisions if payment already released
         if ($deal->released_at) {
             return redirect()->back()->withErrors(['error' => 'Cannot request revisions for a deal that has already been paid.']);
+        }
+
+        // Cannot request revisions if payment is pending clearance
+        if ($deal->awaiting_funds) {
+            return redirect()->back()->withErrors(['error' => 'Cannot request revisions while payment is pending clearance. Please wait until the payment clears.']);
         }
 
         // Deal must be completed (athlete submitted) or approved to request revisions
@@ -169,11 +174,16 @@ class DealApprovalController extends Controller
             return redirect()->back()->withErrors(['error' => 'Cannot cancel a deal that has already been released.']);
         }
 
+        // Cannot cancel if payment is pending clearance
+        if ($deal->awaiting_funds) {
+            return redirect()->back()->withErrors(['error' => 'Cannot cancel deal while payment is pending clearance. Please wait until the payment clears.']);
+        }
+
         try {
             DB::beginTransaction();
 
             // Return escrow funds to SMB wallet
-            if ($deal->payment_status === 'paid' && $deal->escrow_amount) {
+            if (($deal->payment_status === 'paid' || $deal->payment_status === 'paid_escrowed') && $deal->escrow_amount) {
                 $user = Auth::user();
                 $escrowAmount = (float) $deal->escrow_amount;
                 $platformFeeAmount = (float) $deal->platform_fee_amount ?? 0;

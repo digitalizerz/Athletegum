@@ -906,9 +906,21 @@ class DealController extends Controller
 
     public function destroy(Deal $deal)
     {
-        // Ensure the deal belongs to the authenticated user
-        if ($deal->user_id !== Auth::id()) {
+        $user = Auth::user();
+        
+        // Ensure the deal belongs to the authenticated user (unless super admin)
+        if ($deal->user_id !== $user->id && !$user->is_superadmin) {
             abort(403);
+        }
+
+        // Super admin can always delete (bypass awaiting_funds restriction)
+        if (!$user->is_superadmin) {
+            // Cannot delete deal if payment is pending clearance
+            if ($deal->awaiting_funds) {
+                return redirect()->back()->withErrors([
+                    'error' => 'Cannot delete deal while payment is pending clearance. Please wait until the payment clears.'
+                ]);
+            }
         }
 
         // Prevent deletion if athlete has submitted work
@@ -967,6 +979,8 @@ class DealController extends Controller
                 ->withErrors(['error' => 'Some deals could not be found or you do not have permission to delete them.']);
         }
 
+        $user = Auth::user();
+        
         // Check if any deals have submitted work (cannot be deleted)
         $dealsWithSubmittedWork = $deals->filter(function ($deal) {
             return $deal->completed_at || $deal->status === 'completed' || !empty($deal->deliverables);
@@ -977,6 +991,21 @@ class DealController extends Controller
                 ->withErrors([
                     'error' => 'Cannot delete ' . $dealsWithSubmittedWork->count() . ' deal(s). The athlete has already submitted their work. You must either approve or request changes instead.'
                 ]);
+        }
+
+        // Super admin can always delete (bypass awaiting_funds restriction)
+        if (!$user->is_superadmin) {
+            // Check if any deals have payment pending clearance (cannot be deleted)
+            $dealsAwaitingFunds = $deals->filter(function ($deal) {
+                return $deal->awaiting_funds;
+            });
+
+            if ($dealsAwaitingFunds->count() > 0) {
+                return redirect()->route('deals.index')
+                    ->withErrors([
+                        'error' => 'Cannot delete ' . $dealsAwaitingFunds->count() . ' deal(s). Payment is pending clearance. Please wait until the payment clears.'
+                    ]);
+            }
         }
 
         Deal::whereIn('id', $dealIds)->delete();
