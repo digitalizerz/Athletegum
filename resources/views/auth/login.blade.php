@@ -60,9 +60,14 @@
 
         <div class="mt-4 pt-4 border-t border-gray-200 text-center">
             <p class="text-xs text-gray-500 mb-2">Looking for something else?</p>
-            <a href="{{ route('welcome') }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-                ← Back to home
-            </a>
+            <div class="flex flex-col gap-2 items-center">
+                <a href="{{ route('athlete.login') }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                    Login as an Athlete
+                </a>
+                <a href="{{ route('welcome') }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                    ← Back to home
+                </a>
+            </div>
         </div>
     </form>
 </x-guest-layout>
