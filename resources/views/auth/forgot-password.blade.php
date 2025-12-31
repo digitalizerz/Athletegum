@@ -6,7 +6,7 @@
     <!-- Session Status -->
     <x-auth-session-status class="mb-4" :status="session('status')" />
 
-    <form method="POST" action="{{ route('athlete.password.email') }}">
+    <form method="POST" action="{{ route($routeName ?? 'password.email') }}">
         @csrf
 
         <!-- Email Address -->
