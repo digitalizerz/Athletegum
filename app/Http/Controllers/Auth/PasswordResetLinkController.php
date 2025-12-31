@@ -29,10 +29,10 @@ class PasswordResetLinkController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        // Use the businesses broker to explicitly target business users
+        // Use the default users broker (businesses are stored in users table)
         // Wrap in try-catch to prevent timeouts from blocking the request
         try {
-            $status = Password::broker('businesses')->sendResetLink(
+            $status = Password::sendResetLink(
                 $request->only('email')
             );
             
