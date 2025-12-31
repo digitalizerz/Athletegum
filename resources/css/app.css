@@ -274,54 +274,95 @@ input[type="checkbox"]:checked::after {
     min-height: 1.875rem !important;
 }
 
-/* Force light mode on all devices - prevent browser dark mode */
+/* ============================================
+   FORCE LIGHT MODE - PREVENT ALL DARK MODE
+   ============================================ */
+
+/* Base level - force light scheme on HTML element */
 html {
     color-scheme: light !important;
     background-color: #ffffff !important;
 }
 
-html,
-html * {
+/* Force light scheme on ALL elements */
+html *,
+html *::before,
+html *::after {
     color-scheme: light !important;
 }
 
+/* Base body styles - light background, dark text */
 body {
     background-color: #f9fafb !important;
     color: #111827 !important;
+    color-scheme: light !important;
 }
 
-/* Override any browser dark mode styles - force light mode always */
+/* Override ANY dark mode preference - force light mode ALWAYS */
 @media (prefers-color-scheme: dark) {
     html {
         color-scheme: light !important;
         background-color: #ffffff !important;
     }
     
-    html,
-    html * {
+    html *,
+    html *::before,
+    html *::after {
         color-scheme: light !important;
     }
     
     body {
         background-color: #f9fafb !important;
         color: #111827 !important;
+        color-scheme: light !important;
     }
-    
-    /* Force all text to be dark */
-    body,
-    body * {
-        color: inherit !important;
-    }
-    
-    /* Force all backgrounds to be light */
-    body,
-    main,
-    section,
-    div,
-    header,
-    footer,
-    nav,
-    aside {
-        background-color: inherit !important;
-    }
+}
+
+/* Force text colors - prevent light text on light backgrounds */
+h1, h2, h3, h4, h5, h6,
+p, span, div, a, label, li, td, th,
+.text-base-content, .text-gray-900, .text-gray-800, .text-gray-700 {
+    color: #111827 !important;
+}
+
+.text-gray-600 {
+    color: #4b5563 !important;
+}
+
+.text-gray-500 {
+    color: #6b7280 !important;
+}
+
+.text-base-content\/60,
+.text-base-content\/70 {
+    color: #6b7280 !important;
+}
+
+/* Force light backgrounds on common elements */
+.bg-base-100, .bg-white {
+    background-color: #ffffff !important;
+}
+
+.bg-base-200, .bg-gray-50, .bg-gray-100 {
+    background-color: #f9fafb !important;
+}
+
+.bg-base-300, .bg-gray-200 {
+    background-color: #e5e7eb !important;
+}
+
+/* Prevent DaisyUI dark mode */
+[data-theme] {
+    color-scheme: light !important;
+}
+
+/* Override any Tailwind dark mode classes */
+.dark,
+.dark-mode {
+    color-scheme: light !important;
+}
+
+.dark *,
+.dark-mode * {
+    color-scheme: light !important;
 }

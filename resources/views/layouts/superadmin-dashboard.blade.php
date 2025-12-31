@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="light" style="color-scheme: light !important;">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- Prevent browser dark mode on mobile -->
+        <meta name="color-scheme" content="light">
+        <meta name="theme-color" content="#ffffff">
 
         <title>Super Admin - {{ config('app.name', 'AthleteGum') }}</title>
 
@@ -16,8 +19,26 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        <script>
+            // Prevent browser dark mode immediately on page load - MUST run before any styles
+            (function() {
+                // Force light color scheme
+                document.documentElement.style.colorScheme = 'light';
+                document.documentElement.setAttribute('data-theme', 'light');
+                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+                document.documentElement.style.backgroundColor = '#ffffff';
+                
+                if (document.body) {
+                    document.body.classList.remove('dark', 'dark-mode');
+                    document.body.style.colorScheme = 'light';
+                    document.body.style.backgroundColor = '#f9fafb';
+                    document.body.style.color = '#111827';
+                }
+            })();
+        </script>
     </head>
-    <body class="font-sans antialiased bg-base-200">
+    <body class="font-sans antialiased bg-base-200" style="background-color: #f9fafb !important; color: #111827 !important;">
         <div x-data="{ 
                 sidebarOpen: true,
                 init() {

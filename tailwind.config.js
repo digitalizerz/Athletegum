@@ -4,6 +4,8 @@ import daisyui from 'daisyui';
 
 /** @type {import('tailwindcss').Config} */
 export default {
+    // Disable dark mode - we only want light mode (removed darkMode config as Tailwind no longer supports false)
+    
     content: [
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
         './storage/framework/views/*.php',
@@ -45,5 +47,6 @@ export default {
         base: true,
         styled: true,
         utils: true,
+        darkTheme: false, // Explicitly disable dark theme
     },
 };
