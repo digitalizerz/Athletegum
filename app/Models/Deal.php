@@ -30,6 +30,7 @@ class Deal extends Model
         'approval_notes',
         'payment_status',
         'payment_intent_id',
+        'stripe_charge_id',
         'paid_at',
         'released_at',
         'release_transaction_id',

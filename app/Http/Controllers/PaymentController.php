@@ -250,10 +250,11 @@ class PaymentController extends Controller
                     }
 
                     $paymentIntentId = $paymentIntent->id;
+                    $chargeId = $paymentIntent->charges->data[0]->id ?? null;
                     $session->put('payment_method', 'card');
                     $session->put('card_payment_method_id', $paymentMethod->id);
                     $session->put('card_amount', $cardAmount);
-                    $session->put('stripe_charge_id', $paymentIntent->charges->data[0]->id ?? null);
+                    $session->put('stripe_charge_id', $chargeId);
 
                     Log::info('Stripe PaymentIntent succeeded', [
                         'payment_intent_id' => $paymentIntentId,
@@ -321,14 +322,24 @@ class PaymentController extends Controller
             abort(403);
         }
 
-        // Ensure deal is in correct state
-        if ($deal->payment_status !== 'paid') {
-            return redirect()->back()->withErrors(['error' => 'Deal payment has not been completed.']);
+        // Ensure deal is in correct state (paid_escrowed means payment succeeded and funds are in escrow)
+        if ($deal->payment_status !== 'paid_escrowed' && $deal->payment_status !== 'paid') {
+            // Allow 'paid' for backward compatibility with existing deals
+            return redirect()->back()->withErrors(['error' => 'Deal payment has not been completed. Payment status: ' . $deal->payment_status]);
         }
 
         // Funds can be released when deal is completed (athlete submitted) or approved
         if ($deal->status !== 'completed' && !$deal->is_approved) {
             return redirect()->back()->withErrors(['error' => 'Deal must be completed by athlete or approved before payment can be released.']);
+        }
+
+        // Check if payout already exists for this deal (prevent double pay)
+        $existingPayout = \App\Models\Payout::where('deal_id', $deal->id)
+            ->where('status', 'completed')
+            ->first();
+        
+        if ($existingPayout) {
+            return redirect()->back()->withErrors(['error' => 'Payment has already been released for this deal.']);
         }
 
         if ($deal->released_at) {
@@ -339,11 +350,11 @@ class PaymentController extends Controller
             DB::beginTransaction();
 
             // Calculate athlete payout per marketplace rules:
-            // Athlete receives: deal_amount - (deal_amount × 5%)
+            // Use stored values if available, otherwise recalculate (for backward compatibility)
             $dealAmount = (float) $deal->escrow_amount; // This is the base deal amount (what athlete earns)
-            $athleteFeePercentage = 5.0; // Fixed 5% athlete fee
-            $athleteFeeAmount = round($dealAmount * ($athleteFeePercentage / 100), 2);
-            $athleteNetPayout = round($dealAmount - $athleteFeeAmount, 2); // Athlete receives deal_amount - 5%
+            $athleteFeePercentage = $deal->athlete_fee_percentage ?? 5.0; // Use stored value or default to 5%
+            $athleteFeeAmount = $deal->athlete_fee_amount ?? round($dealAmount * ($athleteFeePercentage / 100), 2);
+            $athleteNetPayout = $deal->athlete_net_payout ?? round($dealAmount - $athleteFeeAmount, 2);
 
             // Get athlete's Stripe account ID
             $athlete = $deal->athlete;
@@ -425,99 +436,65 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Get the original charge ID from the PaymentIntent (if available)
-            // For Stripe card payments, use source_transaction
-            // For wallet payments, we cannot release via Stripe Transfer
-            $chargeId = null;
-            $isStripePayment = false;
-            $paymentIntentStatus = null;
+            // Verify payment succeeded (for Stripe payments, check PaymentIntent status)
+            $isStripePayment = $deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_');
             
-            // Check if this is a Stripe payment (payment_intent_id starts with 'pi_')
-            // Wallet payments have payment_intent_id like 'wallet_xxxxx'
-            if ($deal->payment_intent_id && str_starts_with($deal->payment_intent_id, 'pi_')) {
-                $isStripePayment = true;
+            if ($isStripePayment) {
                 try {
-                    // Always expand charges to ensure we get the charge ID
                     $paymentIntent = $this->stripeService->getPaymentIntent($deal->payment_intent_id, ['expand' => ['charges']]);
-                    $paymentIntentStatus = $paymentIntent->status;
                     
-                    Log::info('PaymentIntent retrieved for release', [
-                        'deal_id' => $deal->id,
-                        'payment_intent_id' => $deal->payment_intent_id,
-                        'payment_intent_status' => $paymentIntentStatus,
-                        'has_charges' => $paymentIntent->charges ? count($paymentIntent->charges->data) : 0,
-                    ]);
-                    
-                    // Check if PaymentIntent succeeded
-                    if ($paymentIntentStatus !== 'succeeded') {
+                    if ($paymentIntent->status !== 'succeeded') {
+                        DB::rollBack();
                         Log::warning('PaymentIntent is not succeeded, cannot release payment', [
                             'deal_id' => $deal->id,
                             'payment_intent_id' => $deal->payment_intent_id,
-                            'payment_intent_status' => $paymentIntentStatus,
+                            'payment_intent_status' => $paymentIntent->status,
                         ]);
-                        DB::rollBack();
                         return redirect()->back()->withErrors([
-                            'error' => 'Cannot release payment: The payment has not completed successfully. Payment status: ' . $paymentIntentStatus . '. Please wait a few minutes and try again, or contact support if the issue persists.'
+                            'error' => 'Cannot release payment: The payment has not completed successfully. Payment status: ' . $paymentIntent->status . '. Please wait a few minutes and try again, or contact support if the issue persists.'
                         ]);
                     }
-                    
-                    // Get charge ID from succeeded PaymentIntent
-                    if ($paymentIntent->charges && count($paymentIntent->charges->data) > 0) {
-                        $chargeId = $paymentIntent->charges->data[0]->id;
-                        Log::info('Charge ID extracted from PaymentIntent', [
-                            'deal_id' => $deal->id,
-                            'charge_id' => $chargeId,
-                        ]);
-                    } else {
-                        Log::warning('PaymentIntent succeeded but no charges available', [
-                            'deal_id' => $deal->id,
-                            'payment_intent_id' => $deal->payment_intent_id,
-                            'payment_intent_status' => $paymentIntentStatus,
-                        ]);
-                    }
-                } catch (\Stripe\Exception\InvalidRequestException $e) {
-                    Log::error('Failed to retrieve PaymentIntent for release - InvalidRequestException', [
-                        'deal_id' => $deal->id,
-                        'payment_intent_id' => $deal->payment_intent_id,
-                        'error' => $e->getMessage(),
-                        'stripe_error_code' => $e->getStripeCode(),
-                    ]);
-                    DB::rollBack();
-                    if (str_contains($e->getMessage(), 'No such payment_intent')) {
-                        return redirect()->back()->withErrors([
-                            'error' => 'Cannot release payment: The payment record could not be found in Stripe. This may indicate the payment was not properly processed. Please contact support.'
-                        ]);
-                    }
-                    return redirect()->back()->withErrors([
-                        'error' => 'Cannot release payment: Failed to verify payment in Stripe. ' . $e->getMessage()
-                    ]);
                 } catch (\Exception $e) {
-                    Log::error('Failed to retrieve PaymentIntent for release - unexpected error', [
+                    DB::rollBack();
+                    Log::error('Failed to verify PaymentIntent for release', [
                         'deal_id' => $deal->id,
                         'payment_intent_id' => $deal->payment_intent_id,
                         'error' => $e->getMessage(),
-                        'error_type' => get_class($e),
                     ]);
-                    DB::rollBack();
                     return redirect()->back()->withErrors([
-                        'error' => 'Cannot release payment: Failed to retrieve payment information. Please contact support.'
+                        'error' => 'Cannot release payment: Failed to verify payment in Stripe. Please contact support.'
                     ]);
                 }
-            } else {
-                // This is a wallet payment (payment_intent_id doesn't start with 'pi_')
-                // or payment_intent_id is null/empty
-                $isStripePayment = false;
-                Log::info('Non-Stripe payment detected (wallet payment)', [
-                    'deal_id' => $deal->id,
-                    'payment_intent_id' => $deal->payment_intent_id,
-                ]);
             }
 
-            // Create REAL Stripe transfer to athlete (REQUIRED - Stripe is source of truth)
-            // For card payments: transfer from the charge
-            // For wallet payments: we need to create a charge first, then transfer
+            // Create payout record first (with idempotency key to prevent double pay)
+            $idempotencyKey = "deal_{$deal->id}_release_v1";
+            
+            // Check if payout with this idempotency key already exists
+            $existingPayoutByKey = \App\Models\Payout::where('idempotency_key', $idempotencyKey)->first();
+            if ($existingPayoutByKey && $existingPayoutByKey->status === 'completed') {
+                DB::rollBack();
+                return redirect()->back()->withErrors(['error' => 'Payment has already been released for this deal.']);
+            }
+
+            // Create payout record (pending status)
+            $payout = \App\Models\Payout::create([
+                'deal_id' => $deal->id,
+                'athlete_id' => $athlete->id,
+                'amount' => $athleteNetPayout,
+                'currency' => 'usd',
+                'status' => 'pending',
+                'released_by_admin_id' => Auth::id(),
+                'idempotency_key' => $idempotencyKey,
+            ]);
+
+            // Create Stripe Transfer from platform balance to athlete's connected account
             $releaseTransactionId = null;
             if (!$this->stripeService->isConfigured()) {
+                $payout->update([
+                    'status' => 'failed',
+                    'error_message' => 'Stripe is not configured',
+                ]);
                 DB::rollBack();
                 return redirect()->back()->withErrors([
                     'error' => 'Stripe is not configured. Cannot release payment.'
@@ -525,62 +502,21 @@ class PaymentController extends Controller
             }
 
             try {
-                // For wallet payments, we cannot create Stripe transfers because no Stripe charge exists
-                if (!$isStripePayment) {
-                    // Wallet payment - cannot release via Stripe Transfer
-                    DB::rollBack();
-                    $isTestMode = str_starts_with($this->stripeService->getPublishableKey(), 'pk_test_');
-                    Log::error('Cannot release wallet payment via Stripe Transfer', [
-                        'deal_id' => $deal->id,
-                        'payment_intent_id' => $deal->payment_intent_id,
-                    ]);
-                    $errorMsg = $isTestMode 
-                        ? 'Wallet payments cannot be released because they don\'t create Stripe charges. Please use a Stripe card payment method for deals that need to be released to athletes. The wallet system needs to be enhanced to create actual Stripe charges when payments are made.'
-                        : 'Wallet payments cannot be released via Stripe Transfer. Please use a Stripe card payment method for deals, or ensure wallet payments create actual Stripe charges.';
-                    
-                    return redirect()->back()->withErrors(['error' => $errorMsg]);
-                }
-
-                // For Stripe card payments, we must have a charge ID to transfer from
-                if (!$chargeId) {
-                    DB::rollBack();
-                    
-                    // Check if this is a wallet payment
-                    $isWalletPayment = $deal->payment_intent_id && !str_starts_with($deal->payment_intent_id, 'pi_');
-                    
-                    if ($isWalletPayment) {
-                        Log::error('Cannot release wallet payment: No Stripe charge exists', [
-                            'deal_id' => $deal->id,
-                            'payment_intent_id' => $deal->payment_intent_id,
-                        ]);
-                        return redirect()->back()->withErrors([
-                            'error' => 'This deal was paid using your wallet balance. Wallet payments cannot be automatically released to athletes via Stripe because they don\'t create Stripe charges. To release payment, please contact support or use a Stripe card payment method for future deals that need to be released to athletes.'
-                        ]);
-                    } else {
-                        Log::error('Cannot release payment: No charge ID available for Stripe transfer', [
-                            'deal_id' => $deal->id,
-                            'payment_intent_id' => $deal->payment_intent_id,
-                            'payment_status' => $deal->payment_status,
-                        ]);
-                        return redirect()->back()->withErrors([
-                            'error' => 'Cannot release payment: The Stripe payment charge could not be found. The payment may still be processing, or there may be an issue with the payment. Please wait a few minutes and try again, or contact support if the issue persists.'
-                        ]);
-                    }
-                }
-
                 Log::info('Attempting Stripe transfer to athlete', [
                     'deal_id' => $deal->id,
                     'athlete_id' => $athlete->id,
                     'athlete_stripe_account_id' => $stripeAccountId,
                     'transfer_amount' => $athleteNetPayout,
-                    'charge_id' => $chargeId,
-                    'payment_type' => 'stripe',
+                    'idempotency_key' => $idempotencyKey,
+                    'payout_id' => $payout->id,
                 ]);
 
+                // Transfer from platform balance (not from a specific charge)
+                // This works for both Stripe card payments and wallet payments
                 $transfer = $this->stripeService->transferToAthlete(
                     $athleteNetPayout,
                     $stripeAccountId,
-                    $chargeId, // Must have charge ID for Stripe transfers
+                    $idempotencyKey, // Use idempotency key instead of charge ID
                     [
                         'deal_id' => (string) $deal->id,
                         'athlete_id' => (string) $athlete->id,
@@ -588,11 +524,18 @@ class PaymentController extends Controller
                         'athlete_fee_percentage' => (string) $athleteFeePercentage,
                         'athlete_fee_amount' => (string) $athleteFeeAmount,
                         'athlete_net_payout' => (string) $athleteNetPayout,
-                        'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                        'payout_id' => (string) $payout->id,
                     ]
                 );
 
                 $releaseTransactionId = $transfer->id;
+
+                // Update payout record with transfer ID
+                $payout->update([
+                    'stripe_transfer_id' => $transfer->id,
+                    'status' => 'completed',
+                    'released_at' => now(),
+                ]);
 
                 Log::info('Stripe transfer created successfully', [
                     'deal_id' => $deal->id,
@@ -600,13 +543,20 @@ class PaymentController extends Controller
                     'athlete_id' => $athlete->id,
                     'stripe_account_id' => $stripeAccountId,
                     'amount' => $athleteNetPayout,
-                    'charge_id' => $chargeId,
-                    'payment_type' => $isStripePayment ? 'stripe' : 'wallet',
+                    'idempotency_key' => $idempotencyKey,
+                    'payout_id' => $payout->id,
                 ]);
             } catch (InvalidRequestException $e) {
-                DB::rollBack();
                 $errorMessage = $e->getMessage();
                 $stripeErrorCode = $e->getStripeCode() ?? 'unknown';
+                
+                // Update payout record with error
+                $payout->update([
+                    'status' => 'failed',
+                    'error_message' => $errorMessage,
+                ]);
+                
+                DB::rollBack();
                 
                 // Provide user-friendly error messages for common issues
                 if (str_contains($errorMessage, 'cannot be set to your own account')) {
@@ -616,7 +566,7 @@ class PaymentController extends Controller
                 } elseif (str_contains($errorMessage, 'Invalid account')) {
                     $errorMessage = 'The athlete\'s Stripe account ID is invalid. Please have them update their payment methods with a valid Stripe Connect account ID.';
                 } elseif (str_contains($errorMessage, 'insufficient available funds') || str_contains($errorMessage, 'insufficient funds')) {
-                    $errorMessage = 'Cannot release payment: This deal was paid via wallet or the original payment charge could not be found. Wallet payments cannot be released via Stripe because they don\'t create actual Stripe charges. For deals that need to be released to athletes, please use a Stripe card payment method instead of wallet.';
+                    $errorMessage = 'Cannot release payment: Insufficient funds in platform balance. Please ensure the payment has been processed and funds are available.';
                 }
                 
                 Log::error('Stripe transfer failed - InvalidRequestException', [
@@ -624,7 +574,8 @@ class PaymentController extends Controller
                     'athlete_id' => $athlete->id,
                     'athlete_stripe_account_id' => $stripeAccountId,
                     'transfer_amount' => $athleteNetPayout,
-                    'charge_id' => $chargeId,
+                    'idempotency_key' => $idempotencyKey,
+                    'payout_id' => $payout->id,
                     'error' => $e->getMessage(),
                     'stripe_error_type' => $stripeErrorCode,
                 ]);
@@ -632,13 +583,20 @@ class PaymentController extends Controller
                     'error' => 'Failed to transfer funds to athlete: ' . $errorMessage
                 ]);
             } catch (\Exception $e) {
+                // Update payout record with error
+                $payout->update([
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                ]);
+                
                 DB::rollBack();
                 Log::error('Stripe transfer failed - unexpected error', [
                     'deal_id' => $deal->id,
                     'athlete_id' => $athlete->id,
                     'athlete_stripe_account_id' => $stripeAccountId,
                     'transfer_amount' => $athleteNetPayout,
-                    'charge_id' => $chargeId,
+                    'idempotency_key' => $idempotencyKey,
+                    'payout_id' => $payout->id,
                     'error' => $e->getMessage(),
                     'error_type' => get_class($e),
                 ]);
@@ -647,12 +605,13 @@ class PaymentController extends Controller
                 ]);
             }
             
-            // Auto-approve if not already approved (when releasing from completed status)
+            // Update deal status to 'released' (escrow has been released)
             $wasApproved = $deal->is_approved;
             $updateData = [
                 'released_at' => now(),
                 'release_transaction_id' => $releaseTransactionId,
                 'status' => 'completed',
+                'payment_status' => 'released', // Mark as released
                 'athlete_fee_percentage' => $athleteFeePercentage,
                 'athlete_fee_amount' => $athleteFeeAmount,
                 'athlete_net_payout' => $athleteNetPayout,

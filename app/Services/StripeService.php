@@ -224,10 +224,11 @@ class StripeService
      * Transfer funds to athlete (payout on deal release)
      * 
      * Note: This requires Stripe Connect. The athlete must have a connected Stripe account.
+     * Transfers from platform balance (not from a specific charge).
      * 
      * @param float $amount Amount in dollars (net payout after athlete fee = deal_amount - 5%)
      * @param string $athleteStripeAccountId Athlete's Stripe Connect account ID (acct_xxx)
-     * @param string|null $chargeId Original charge ID (ch_xxx) - if null, transfers from platform balance
+     * @param string $idempotencyKey Idempotency key to prevent duplicate transfers
      * @param array $metadata Additional metadata
      * @return Transfer
      * @throws ApiErrorException
@@ -235,7 +236,7 @@ class StripeService
     public function transferToAthlete(
         float $amount,
         string $athleteStripeAccountId,
-        ?string $chargeId = null,
+        string $idempotencyKey,
         array $metadata = []
     ): Transfer {
         if (!$this->isConfigured()) {
@@ -245,7 +246,8 @@ class StripeService
         $amountInCents = (int) round($amount * 100);
 
         // Create transfer to athlete's connected account
-        // This moves funds from platform account to athlete account
+        // This moves funds from platform balance to athlete account
+        // Do NOT use source_transaction - transfer from platform balance
         $params = [
             'amount' => $amountInCents,
             'currency' => 'usd',
@@ -253,20 +255,17 @@ class StripeService
             'metadata' => $metadata,
         ];
 
-        // If charge ID is provided, transfer from that specific charge
-        // If not (wallet payments), transfer from platform's available balance
-        if ($chargeId) {
-            $params['source_transaction'] = $chargeId;
-        }
-
-        $transfer = Transfer::create($params);
+        // Use idempotency key to prevent duplicate transfers
+        $transfer = Transfer::create($params, [
+            'idempotency_key' => $idempotencyKey,
+        ]);
 
         Log::info('Stripe Transfer created for athlete', [
             'transfer_id' => $transfer->id,
             'amount' => $amount,
             'athlete_account' => $athleteStripeAccountId,
-            'charge_id' => $chargeId,
-            'transfer_from' => $chargeId ? 'charge' : 'platform_balance',
+            'idempotency_key' => $idempotencyKey,
+            'transfer_from' => 'platform_balance',
         ]);
 
         return $transfer;

@@ -424,6 +424,12 @@ class DealController extends Controller
         $escrowAmount = $session->get('escrow_amount');
         $totalAmount = $session->get('total_amount');
         $paymentIntentId = $session->get('payment_intent_id');
+        
+        // Calculate athlete fees (for when payment is released)
+        // Athlete receives: deal_amount - (deal_amount × 5%)
+        $athleteFeePercentage = 5.0; // Fixed 5% athlete service fee
+        $athleteFeeAmount = round($compensationAmount * ($athleteFeePercentage / 100), 2);
+        $athleteNetPayout = round($compensationAmount - $athleteFeeAmount, 2); // Athlete receives deal_amount - 5%
         $paymentStatus = $session->get('payment_status', 'pending');
 
         // Check if user has payment methods - required before final submission
@@ -505,6 +511,9 @@ class DealController extends Controller
                 'platform_fee_amount' => $platformFeeAmount,
                 'escrow_amount' => $escrowAmount,
                 'total_amount' => $totalAmount,
+                'athlete_fee_percentage' => $athleteFeePercentage,
+                'athlete_fee_amount' => $athleteFeeAmount,
+                'athlete_net_payout' => $athleteNetPayout,
                 'deadline' => $deadline,
                 'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
                 'frequency' => $frequency,
@@ -514,8 +523,9 @@ class DealController extends Controller
                 'contract_signed' => $contractSigned,
                 'contract_signed_at' => $contractSigned ? now() : null,
                 'status' => 'pending',
-                'payment_status' => $paymentStatus, // 'paid' for wallet, 'pending' or 'paid' for Stripe
+                'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus, // Mark as paid_escrowed when payment succeeds
                 'payment_intent_id' => $paymentIntentId,
+                'stripe_charge_id' => $session->get('stripe_charge_id'), // Store charge ID for reference
                 'paid_at' => $paymentStatus === 'paid' ? now() : null,
             ]);
 
