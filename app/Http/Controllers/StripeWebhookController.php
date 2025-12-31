@@ -91,6 +91,7 @@ class StripeWebhookController extends Controller
         }
 
         // Update deal payment status to paid_escrowed (escrow is internal DB state)
+        // Mark as awaiting_funds because Stripe funds may still be pending
         // Store charge ID if available
         $chargeId = null;
         if (isset($paymentIntent->charges) && count($paymentIntent->charges->data) > 0) {
@@ -99,6 +100,7 @@ class StripeWebhookController extends Controller
         
         $deal->update([
             'payment_status' => 'paid_escrowed', // Mark as paid_escrowed (escrow is internal)
+            'awaiting_funds' => true, // Funds may still be pending in Stripe
             'stripe_charge_id' => $chargeId, // Store charge ID for reference
             'paid_at' => now(),
         ]);
@@ -148,6 +150,7 @@ class StripeWebhookController extends Controller
             if ($deal && $deal->payment_status !== 'paid_escrowed' && $deal->payment_status !== 'paid') {
                 $deal->update([
                     'payment_status' => 'paid_escrowed', // Mark as paid_escrowed (escrow is internal)
+                    'awaiting_funds' => true, // Funds may still be pending in Stripe
                     'stripe_charge_id' => $charge->id, // Store charge ID for reference
                     'paid_at' => now(),
                 ]);

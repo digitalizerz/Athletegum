@@ -328,6 +328,13 @@ class PaymentController extends Controller
             return redirect()->back()->withErrors(['error' => 'Deal payment has not been completed. Payment status: ' . $deal->payment_status]);
         }
 
+        // Check if funds are still pending in Stripe
+        if ($deal->awaiting_funds) {
+            return redirect()->back()->withErrors([
+                'error' => 'Payment complete – payout pending clearing. Stripe funds are still pending. The transfer will be processed automatically once funds are available. Please check back later.'
+            ]);
+        }
+
         // Funds can be released when deal is completed (athlete submitted) or approved
         if ($deal->status !== 'completed' && !$deal->is_approved) {
             return redirect()->back()->withErrors(['error' => 'Deal must be completed by athlete or approved before payment can be released.']);
@@ -467,6 +474,58 @@ class PaymentController extends Controller
                 }
             }
 
+            // Check Stripe balance availability BEFORE attempting transfer
+            // This prevents "insufficient funds" errors when funds are still pending
+            if (!$this->stripeService->isConfigured()) {
+                DB::rollBack();
+                return redirect()->back()->withErrors([
+                    'error' => 'Stripe is not configured. Cannot release payment.'
+                ]);
+            }
+
+            try {
+                // Fetch Stripe available balance
+                $availableBalance = $this->stripeService->getAvailableBalance();
+                
+                // Check if available balance is sufficient for the payout
+                if ($availableBalance < $athleteNetPayout) {
+                    // Funds are not yet available - keep deal in awaiting_funds status
+                    DB::rollBack();
+                    
+                    // Update deal outside transaction to mark as awaiting funds
+                    $deal->update(['awaiting_funds' => true]);
+                    
+                    Log::warning('Insufficient Stripe balance for payout', [
+                        'deal_id' => $deal->id,
+                        'athlete_id' => $athlete->id,
+                        'required_amount' => $athleteNetPayout,
+                        'available_balance' => $availableBalance,
+                    ]);
+                    
+                    return redirect()->back()->withErrors([
+                        'error' => 'Payment complete – payout pending clearing. Stripe funds are still pending. The transfer will be processed automatically once funds are available. Please check back later.'
+                    ]);
+                }
+                
+                // Funds are available - clear awaiting_funds flag (will be updated in transaction later)
+                
+                Log::info('Stripe balance sufficient for payout', [
+                    'deal_id' => $deal->id,
+                    'athlete_id' => $athlete->id,
+                    'required_amount' => $athleteNetPayout,
+                    'available_balance' => $availableBalance,
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Failed to check Stripe balance', [
+                    'deal_id' => $deal->id,
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->back()->withErrors([
+                    'error' => 'Failed to verify Stripe balance. Please try again later or contact support.'
+                ]);
+            }
+
             // Create payout record first (with idempotency key to prevent double pay)
             $idempotencyKey = "deal_{$deal->id}_release_v1";
             
@@ -490,16 +549,6 @@ class PaymentController extends Controller
 
             // Create Stripe Transfer from platform balance to athlete's connected account
             $releaseTransactionId = null;
-            if (!$this->stripeService->isConfigured()) {
-                $payout->update([
-                    'status' => 'failed',
-                    'error_message' => 'Stripe is not configured',
-                ]);
-                DB::rollBack();
-                return redirect()->back()->withErrors([
-                    'error' => 'Stripe is not configured. Cannot release payment.'
-                ]);
-            }
 
             try {
                 Log::info('Attempting Stripe transfer to athlete', [

@@ -356,5 +356,47 @@ class StripeService
         $loginLink = Account::createLoginLink($accountId);
         return $loginLink->url;
     }
+
+    /**
+     * Get Stripe account balance (available funds)
+     * Returns available balance in dollars
+     * 
+     * @return float Available balance in dollars
+     * @throws ApiErrorException
+     */
+    public function getAvailableBalance(): float
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        try {
+            $balance = \Stripe\Balance::retrieve();
+            
+            // Get available balance (funds that can be transferred)
+            // Stripe returns balance in cents, convert to dollars
+            $availableBalance = 0;
+            foreach ($balance->available as $available) {
+                if ($available->currency === 'usd') {
+                    $availableBalance += $available->amount;
+                }
+            }
+            
+            // Convert from cents to dollars
+            $availableBalanceInDollars = $availableBalance / 100;
+            
+            Log::info('Stripe balance retrieved', [
+                'available_balance' => $availableBalanceInDollars,
+                'pending_balance' => ($balance->pending[0]->amount ?? 0) / 100,
+            ]);
+            
+            return $availableBalanceInDollars;
+        } catch (ApiErrorException $e) {
+            Log::error('Failed to retrieve Stripe balance', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
 }
 

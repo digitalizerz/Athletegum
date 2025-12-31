@@ -276,7 +276,11 @@
                                         </span>
                                         @if($deal->isInEscrow())
                                             <div class="text-xs text-base-content/60 mt-1">
-                                                <span class="badge badge-warning badge-sm">In Escrow</span>
+                                                @if($deal->awaiting_funds)
+                                                    <span class="badge badge-warning badge-sm" title="Payment complete – payout pending clearing">Payout Pending Clearing</span>
+                                                @else
+                                                    <span class="badge badge-warning badge-sm">In Escrow</span>
+                                                @endif
                                             </div>
                                         @elseif($deal->released_at)
                                             <div class="text-xs text-base-content/60 mt-1">

@@ -29,6 +29,7 @@ class Deal extends Model
         'approved_at',
         'approval_notes',
         'payment_status',
+        'awaiting_funds',
         'payment_intent_id',
         'stripe_charge_id',
         'paid_at',
@@ -64,6 +65,7 @@ class Deal extends Model
             'contract_signed_at' => 'datetime',
             'is_approved' => 'boolean',
             'approved_at' => 'datetime',
+            'awaiting_funds' => 'boolean',
             'paid_at' => 'datetime',
             'released_at' => 'datetime',
             'deliverables' => 'array',
@@ -211,7 +213,7 @@ class Deal extends Model
      */
     public function isInEscrow(): bool
     {
-        return $this->payment_status === 'paid' 
+        return ($this->payment_status === 'paid' || $this->payment_status === 'paid_escrowed')
             && $this->released_at === null 
             && !in_array($this->status, ['cancelled']);
     }
@@ -221,7 +223,7 @@ class Deal extends Model
      */
     public function getEscrowStatus(): string
     {
-        if ($this->payment_status !== 'paid') {
+        if ($this->payment_status !== 'paid' && $this->payment_status !== 'paid_escrowed') {
             return 'Not Paid';
         }
 
@@ -231,6 +233,11 @@ class Deal extends Model
 
         if ($this->status === 'cancelled') {
             return 'Refunded';
+        }
+
+        // Check if funds are still pending in Stripe
+        if ($this->awaiting_funds) {
+            return 'Payout Pending Clearing';
         }
 
         if ($this->is_approved) {
@@ -267,13 +274,15 @@ class Deal extends Model
 
     /**
      * Check if deal can be released (when completed by athlete or approved by SMB)
+     * Note: Release will be blocked if awaiting_funds is true (funds not yet available in Stripe)
      */
     public function canBeReleased(): bool
     {
-        return $this->payment_status === 'paid' 
+        return ($this->payment_status === 'paid' || $this->payment_status === 'paid_escrowed')
             && $this->released_at === null
             && $this->status !== 'cancelled'
-            && ($this->status === 'completed' || $this->is_approved);
+            && ($this->status === 'completed' || $this->is_approved)
+            && !$this->awaiting_funds; // Cannot release if funds are still pending
     }
 
     /**
