@@ -39,6 +39,19 @@ class AuthController extends Controller
 
         event(new Registered($athlete));
 
+        // Explicitly send verification email
+        try {
+            $athlete->sendEmailVerificationNotification();
+            \Log::info('Verification email sent (athlete)', ['athlete_id' => $athlete->id, 'email' => $athlete->email]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send verification email (athlete)', [
+                'athlete_id' => $athlete->id,
+                'email' => $athlete->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+
         Auth::guard('athlete')->login($athlete);
 
         return redirect()->route('athlete.dashboard');

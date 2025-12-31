@@ -129,12 +129,17 @@ class DealApprovalController extends Controller
                         \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
                             new \App\Mail\RevisionsRequestedMail($deal->athlete->name, $deal, $validated['revision_notes'])
                         );
+                        \Log::info('Revision request email sent', [
+                            'deal_id' => $deal->id,
+                            'athlete_email' => $deal->athlete->email,
+                        ]);
                     }
                 } catch (\Exception $e) {
                     \Log::error('Failed to send revision request email', [
                         'deal_id' => $deal->id,
                         'athlete_id' => $deal->athlete_id,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                     // Don't fail the revision request if email fails
                 }

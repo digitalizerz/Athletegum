@@ -495,12 +495,18 @@ class EarningsController extends Controller
                     \Illuminate\Support\Facades\Mail::to($athlete->email)->send(
                         new \App\Mail\WithdrawalRequestedMail($athlete->name, $validated['amount'])
                     );
+                    \Log::info('Withdrawal request email sent', [
+                        'athlete_id' => $athlete->id,
+                        'athlete_email' => $athlete->email,
+                        'withdrawal_id' => $withdrawal->id ?? null,
+                    ]);
                 }
             } catch (\Exception $e) {
                 \Log::error('Failed to send withdrawal request email', [
                     'athlete_id' => $athlete->id,
                     'withdrawal_id' => $withdrawal->id ?? null,
                     'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ]);
                 // Don't fail the withdrawal request if email fails
             }

@@ -705,12 +705,17 @@ class PaymentController extends Controller
                         \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
                             new \App\Mail\PaymentReleasedMail($deal->athlete->name, $deal, $athleteNetPayout)
                         );
+                        \Log::info('Payment released email sent', [
+                            'deal_id' => $deal->id,
+                            'athlete_email' => $deal->athlete->email,
+                        ]);
                     }
                 } catch (\Exception $e) {
                     \Log::error('Failed to send payment released email', [
                         'deal_id' => $deal->id,
                         'athlete_id' => $deal->athlete_id,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                     // Don't fail the payment release if email fails
                 }

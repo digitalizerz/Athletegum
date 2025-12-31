@@ -409,12 +409,17 @@ class DealController extends Controller
                     \Illuminate\Support\Facades\Mail::to($business->email)->send(
                         new \App\Mail\DeliverablesSubmittedMail($businessName, $athlete->name, $deal)
                     );
+                    \Log::info('Deliverables submitted email sent', [
+                        'deal_id' => $deal->id,
+                        'business_email' => $business->email,
+                    ]);
                 }
             } catch (\Exception $e) {
                 \Log::error('Failed to send deliverables submitted email', [
                     'deal_id' => $deal->id,
                     'business_id' => $deal->user_id,
                     'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ]);
                 // Don't fail the submission if email fails
             }

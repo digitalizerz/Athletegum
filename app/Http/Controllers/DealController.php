@@ -542,11 +542,16 @@ class DealController extends Controller
                     \Illuminate\Support\Facades\Mail::to($athleteEmail)->send(
                         new \App\Mail\NewDealCreatedMail($athleteName, $deal)
                     );
+                    \Log::info('Deal creation email sent', [
+                        'deal_id' => $deal->id,
+                        'athlete_email' => $athleteEmail,
+                    ]);
                 } catch (\Exception $e) {
                     \Log::error('Failed to send deal creation email', [
                         'deal_id' => $deal->id,
                         'athlete_email' => $athleteEmail,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                     // Don't fail the deal creation if email fails
                 }

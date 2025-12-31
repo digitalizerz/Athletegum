@@ -43,6 +43,19 @@ class RegisteredUserController extends Controller
 
         event(new Registered($user));
 
+        // Explicitly send verification email
+        try {
+            $user->sendEmailVerificationNotification();
+            \Log::info('Verification email sent', ['user_id' => $user->id, 'email' => $user->email]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send verification email', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+
         Auth::login($user);
 
         return redirect(route('dashboard', absolute: false));
