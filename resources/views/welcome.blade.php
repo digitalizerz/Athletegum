@@ -20,14 +20,45 @@
                 // Force light color scheme
                 document.documentElement.style.colorScheme = 'light';
                 document.documentElement.setAttribute('data-theme', 'light');
-                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.remove('dark', 'dark-mode');
                 document.documentElement.classList.add('light');
+                document.documentElement.style.backgroundColor = '#ffffff';
                 
                 // Prevent any dark mode classes
                 if (document.body) {
                     document.body.classList.remove('dark', 'dark-mode');
                     document.body.style.colorScheme = 'light';
                 }
+                
+                // Continuously monitor and prevent dark mode
+                const observer = new MutationObserver(function(mutations) {
+                    if (document.documentElement.classList.contains('dark') || 
+                        document.documentElement.classList.contains('dark-mode') ||
+                        document.documentElement.getAttribute('data-theme') === 'dark') {
+                        document.documentElement.classList.remove('dark', 'dark-mode');
+                        document.documentElement.setAttribute('data-theme', 'light');
+                        document.documentElement.style.colorScheme = 'light';
+                    }
+                    if (document.body.classList.contains('dark') || 
+                        document.body.classList.contains('dark-mode')) {
+                        document.body.classList.remove('dark', 'dark-mode');
+                        document.body.style.colorScheme = 'light';
+                    }
+                });
+                
+                observer.observe(document.documentElement, {
+                    attributes: true,
+                    attributeFilter: ['class', 'data-theme', 'style'],
+                    childList: false,
+                    subtree: false
+                });
+                
+                observer.observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ['class', 'style'],
+                    childList: false,
+                    subtree: false
+                });
             })();
         </script>
     </head>

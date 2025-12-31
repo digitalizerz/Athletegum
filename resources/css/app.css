@@ -276,6 +276,7 @@ input[type="checkbox"]:checked::after {
 
 /* ============================================
    FORCE LIGHT MODE - PREVENT ALL DARK MODE
+   COMPREHENSIVE SOLUTION - ABSOLUTE ENFORCEMENT
    ============================================ */
 
 /* Base level - force light scheme on HTML element */
@@ -284,10 +285,13 @@ html {
     background-color: #ffffff !important;
 }
 
-/* Force light scheme on ALL elements */
+/* Force light scheme on ALL elements including pseudo-elements */
 html *,
 html *::before,
-html *::after {
+html *::after,
+*,
+*::before,
+*::after {
     color-scheme: light !important;
 }
 
@@ -300,69 +304,196 @@ body {
 
 /* Override ANY dark mode preference - force light mode ALWAYS */
 @media (prefers-color-scheme: dark) {
-    html {
-        color-scheme: light !important;
-        background-color: #ffffff !important;
-    }
-    
+    html,
     html *,
     html *::before,
-    html *::after {
+    html *::after,
+    *,
+    *::before,
+    *::after {
         color-scheme: light !important;
+    }
+    
+    html {
+        background-color: #ffffff !important;
     }
     
     body {
         background-color: #f9fafb !important;
-        color: #111827 !important;
         color-scheme: light !important;
     }
+    
+    /* Don't force text colors - let Tailwind classes work naturally */
 }
 
-/* Force text colors - prevent light text on light backgrounds */
-h1, h2, h3, h4, h5, h6,
-p, span, div, a, label, li, td, th,
-.text-base-content, .text-gray-900, .text-gray-800, .text-gray-700 {
-    color: #111827 !important;
-}
-
-.text-gray-600 {
-    color: #4b5563 !important;
-}
-
-.text-gray-500 {
-    color: #6b7280 !important;
-}
-
-.text-base-content\/60,
-.text-base-content\/70 {
-    color: #6b7280 !important;
-}
+/* REMOVED: Aggressive text color forcing */
+/* We prevent dark mode at the root level, so Tailwind classes work naturally */
+/* Intentional design (black sections with white text) will work as intended */
 
 /* Force light backgrounds on common elements */
-.bg-base-100, .bg-white {
+.bg-base-100,
+.bg-white {
     background-color: #ffffff !important;
 }
 
-.bg-base-200, .bg-gray-50, .bg-gray-100 {
+.bg-base-200,
+.bg-gray-50,
+.bg-gray-100 {
     background-color: #f9fafb !important;
 }
 
-.bg-base-300, .bg-gray-200 {
+.bg-base-300,
+.bg-gray-200 {
     background-color: #e5e7eb !important;
 }
 
-/* Prevent DaisyUI dark mode */
-[data-theme] {
+/* Override DaisyUI base colors to force light mode */
+[data-theme],
+[data-theme="light"],
+[data-theme="dark"] {
     color-scheme: light !important;
+    --p: 222.2 47.4% 11.2%;
+    --pf: 222.2 47.4% 11.2%;
+    --pc: 210 40% 98%;
+    --s: 217.2 32.6% 17.5%;
+    --sf: 217.2 32.6% 17.5%;
+    --sc: 210 40% 98%;
+    --a: 0 0% 50%;
+    --af: 0 0% 50%;
+    --ac: 210 40% 98%;
+    --n: 218 24% 15%;
+    --nf: 218 24% 15%;
+    --nc: 210 40% 98%;
+    --b1: 0 0% 100%;
+    --b2: 210 20% 98%;
+    --b3: 216 12.2% 83.9%;
+    --bc: 215 28% 16.9%;
+    --in: 198 93% 60%;
+    --inc: 198 93% 10%;
+    --su: 158 64% 52%;
+    --suc: 158 64% 10%;
+    --wa: 43 96% 56%;
+    --wac: 43 96% 10%;
+    --er: 0 91% 71%;
+    --erc: 0 91% 10%;
+    --rounded-box: 1rem;
+    --rounded-btn: 0.5rem;
+    --rounded-badge: 1.9rem;
+    --animation-btn: 0.25s;
+    --animation-input: 0.2s;
+    --btn-text-case: uppercase;
+    --btn-focus-scale: 0.95;
+    --border-btn: 1px;
+    --tab-border: 1px;
+    --tab-radius: 0.5rem;
+}
+
+/* Prevent DaisyUI dark mode */
+[data-theme="dark"] {
+    color-scheme: light !important;
+    --b1: 0 0% 100%;
+    --b2: 210 20% 98%;
+    --b3: 216 12.2% 83.9%;
+    --bc: 215 28% 16.9%;
 }
 
 /* Override any Tailwind dark mode classes */
 .dark,
-.dark-mode {
+.dark-mode,
+html.dark,
+html.dark-mode,
+body.dark,
+body.dark-mode {
     color-scheme: light !important;
 }
 
 .dark *,
-.dark-mode * {
+.dark-mode *,
+html.dark *,
+html.dark-mode *,
+body.dark *,
+body.dark-mode * {
     color-scheme: light !important;
+}
+
+/* Force card backgrounds */
+.card,
+.card-body {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+/* Force input fields */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea,
+select {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    border-color: #d1d5db !important;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+select:focus {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    border-color: #111827 !important;
+}
+
+/* Force modal backgrounds */
+.modal,
+.modal-box {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+/* Force sidebar and navigation */
+aside,
+nav,
+.sidebar {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+/* Force table elements */
+table,
+thead,
+tbody,
+tr,
+td,
+th {
+    background-color: transparent !important;
+    color: #111827 !important;
+}
+
+thead th {
+    background-color: #f9fafb !important;
+    color: #111827 !important;
+}
+
+/* Force dropdowns and menus */
+.dropdown-content,
+.menu {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+/* REMOVED: Badge and label color forcing */
+/* They use their natural Tailwind classes */
+
+/* REMOVED: Aggressive text color forcing */
+/* Links and text use their natural Tailwind classes (.text-white, .text-black, etc.) */
+/* Only ensure black backgrounds stay black */
+.bg-black {
+    background-color: #000000 !important;
+}
+
+.bg-primary {
+    background-color: #111827 !important;
 }
