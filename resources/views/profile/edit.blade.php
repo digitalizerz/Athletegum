@@ -1,4 +1,4 @@
-@if(Auth::user()->is_superadmin)
+@if(Auth::user()->is_admin)
     <x-superadmin-dashboard-layout>
         <x-slot name="header">
             <h1 class="text-2xl font-semibold">Profile Settings</h1>

@@ -54,7 +54,7 @@ class ProfileController extends Controller
         }
 
         // Redirect to appropriate route based on user type
-        if ($user->is_superadmin) {
+        if ($user->is_admin) {
             return Redirect::route('admin.profile.edit')->with('status', $status);
         }
         
