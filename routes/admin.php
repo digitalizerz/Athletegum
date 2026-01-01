@@ -82,6 +82,10 @@ Route::domain('admin.athletegum.com')->group(function () {
     // Audit Logs
     Route::get('/audit-logs', [\App\Http\Controllers\Admin\SuperAdminController::class, 'auditLogs'])->name('admin.audit-logs.index');
     
+    // Settings (redirects to Stripe & Fees)
+    Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index'])->name('admin.settings');
+    Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update'])->name('admin.settings.update');
+    
     // Stripe & Fees Management
     Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('admin.stripe-fees.index');
     Route::post('/stripe-fees/stripe/verify', [\App\Http\Controllers\Admin\StripeFeesController::class, 'verifyStripe'])->name('admin.stripe-fees.verify-stripe');

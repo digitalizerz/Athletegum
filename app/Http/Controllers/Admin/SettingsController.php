@@ -12,9 +12,9 @@ class SettingsController extends Controller
     public function __construct()
     {
         // Middleware is handled in routes
-        // Additional superadmin check
-        if (Auth::check() && !Auth::user()->is_superadmin) {
-            abort(403, 'Unauthorized access. Superadmin privileges required.');
+        // Additional admin check
+        if (Auth::check() && !Auth::user()->is_admin) {
+            abort(403, 'Unauthorized access. Admin privileges required.');
         }
     }
 
