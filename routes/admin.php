@@ -78,11 +78,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
         Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
         
-        // Stripe & Fees Management
-        Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('stripe-fees.index');
-        Route::post('/stripe-fees/stripe/verify', [\App\Http\Controllers\Admin\StripeFeesController::class, 'verifyStripe'])->name('stripe-fees.verify-stripe');
-        Route::post('/stripe-fees/smb-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateSMBFee'])->name('stripe-fees.update-smb-fee');
-        Route::post('/stripe-fees/athlete-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateAthleteFee'])->name('stripe-fees.update-athlete-fee');
+            // Stripe & Fees Management
+            Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('stripe-fees.index');
+            Route::post('/stripe-fees/stripe/verify', [\App\Http\Controllers\Admin\StripeFeesController::class, 'verifyStripe'])->name('stripe-fees.verify-stripe');
+            Route::post('/stripe-fees/smb-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateSMBFee'])->name('stripe-fees.update-smb-fee');
+            Route::post('/stripe-fees/athlete-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateAthleteFee'])->name('stripe-fees.update-athlete-fee');
+            
+            // Revenue Dashboard
+            Route::get('/revenue', [\App\Http\Controllers\Admin\RevenueController::class, 'index'])->name('revenue.index');
+            Route::get('/revenue/deals', [\App\Http\Controllers\Admin\RevenueController::class, 'deals'])->name('revenue.deals');
+            Route::get('/revenue/athletes', [\App\Http\Controllers\Admin\RevenueController::class, 'athletes'])->name('revenue.athletes');
         
         // Profile Settings (Admin)
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
