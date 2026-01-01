@@ -12,7 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function () {
             // Load admin subdomain routes
-            Route::middleware(['web', \App\Http\Middleware\EnsureAdminSubdomain::class])
+            // Domain constraint in routes/admin.php handles subdomain routing
+            Route::middleware('web')
                 ->group(base_path('routes/admin.php'));
         },
     )
