@@ -299,7 +299,7 @@ class DealController extends Controller
         }
         
         $escrowAmount = round($compensationAmount, 2);
-        $totalAmount = round($compensationAmount + $platformFeeAmount, 2);
+        $totalAmount = round($compensationAmount, 2); // Business pays deal_amount only (platform fee comes OUT OF deal_amount)
 
         // Get user's wallet balance
         $walletBalance = (float) Auth::user()->wallet_balance ?? 0.00;
@@ -419,17 +419,18 @@ class DealController extends Controller
         $cardAmount = $session->get('card_amount', 0);
         $platformFeeType = $session->get('platform_fee_type', 'percentage');
         $platformFeePercentage = $session->get('platform_fee_percentage');
-        $platformFeeValue = $session->get('platform_fee_value');
         $platformFeeAmount = $session->get('platform_fee_amount');
         $escrowAmount = $session->get('escrow_amount');
         $totalAmount = $session->get('total_amount');
         $paymentIntentId = $session->get('payment_intent_id');
         
         // Calculate athlete fees (for when payment is released)
-        // Athlete receives: deal_amount - (deal_amount × 5%)
-        $athleteFeePercentage = 5.0; // Fixed 5% athlete service fee
-        $athleteFeeAmount = round($compensationAmount * ($athleteFeePercentage / 100), 2);
-        $athleteNetPayout = round($compensationAmount - $athleteFeeAmount, 2); // Athlete receives deal_amount - 5%
+        // Platform takes 10% via application_fee_amount at payment time
+        // Athletes pay $0 platform fee
+        // Athlete receives: deal_amount - platform_fee_amount (90% of deal amount)
+        $athleteFeePercentage = 0.0; // Athletes pay $0 platform fee
+        $athleteFeeAmount = 0.0; // No athlete fee
+        $athleteNetPayout = round($compensationAmount - $platformFeeAmount, 2); // Athlete receives deal_amount - platform_fee
         $paymentStatus = $session->get('payment_status', 'pending');
 
         // Check if user has payment methods - required before final submission
@@ -600,7 +601,7 @@ class DealController extends Controller
             'deal_type', 'platforms', 'compensation_amount', 'deadline', 'deadline_time', 
             'frequency', 'notes', 'attachments', 'contract_text', 'contract_signed',
             'payment_method', 'payment_method_id', 'card_payment_method_id', 'wallet_amount_used', 'card_amount',
-            'platform_fee_percentage', 'platform_fee_amount', 'platform_fee_type', 'platform_fee_value',
+            'platform_fee_percentage', 'platform_fee_amount', 'platform_fee_type',
             'escrow_amount', 'total_amount', 'payment_intent_id', 'payment_status', 'athlete_email',
             'resuming_draft_id'
         ]);

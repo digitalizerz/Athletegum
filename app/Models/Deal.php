@@ -144,7 +144,7 @@ class Deal extends Model
         }
         
         $escrowAmount = round($compensation, 2);
-        $totalAmount = round($compensation + $platformFee, 2);
+        $totalAmount = round($compensation, 2); // Business pays deal_amount only (platform fee comes OUT OF deal_amount)
 
         return [
             'compensation_amount' => $compensation,

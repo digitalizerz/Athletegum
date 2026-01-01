@@ -58,9 +58,12 @@ class StripeService
     /**
      * Create a PaymentIntent for a deal payment
      * 
-     * @param float $amount Amount in dollars (will be converted to cents) - this is the TOTAL amount (compensation + platform fee)
+     * Note: We use platform charges + separate transfers (not direct charges)
+     * Platform revenue comes from remaining balance after transferring to athlete
+     * 
+     * @param float $amount Amount in dollars (will be converted to cents) - this is the deal_amount the business pays
      * @param string $paymentMethodId Stripe payment method ID
-     * @param float $applicationFeeAmount Platform fee amount in dollars (for metadata only, not used in charge)
+     * @param float $platformFeeAmount Platform fee amount in dollars (for metadata tracking only)
      * @param array $metadata Additional metadata
      * @param string|null $customerId Stripe customer ID (required if payment method is attached to a customer)
      * @return PaymentIntent
@@ -69,7 +72,7 @@ class StripeService
     public function createPaymentIntent(
         float $amount,
         string $paymentMethodId,
-        float $applicationFeeAmount = 0,
+        float $platformFeeAmount = 0,
         array $metadata = [],
         ?string $customerId = null
     ): PaymentIntent {
@@ -79,9 +82,9 @@ class StripeService
 
         $amountInCents = (int) round($amount * 100);
 
-        // Add platform fee to metadata for tracking
-        if ($applicationFeeAmount > 0) {
-            $metadata['platform_fee_amount'] = (string) $applicationFeeAmount;
+        // Add platform fee to metadata for tracking (not used by Stripe)
+        if ($platformFeeAmount > 0) {
+            $metadata['platform_fee_amount'] = (string) $platformFeeAmount;
         }
 
         $params = [
@@ -103,9 +106,8 @@ class StripeService
             $params['customer'] = $customerId;
         }
 
-        // Note: Application fees require Stripe Connect
-        // For v1, we charge the full amount and track platform fees separately
-        // Platform fees are retained by the platform account automatically
+        // Note: We use platform charges + separate transfers (not direct charges)
+        // application_fee_amount is NOT used - platform revenue comes from balance after transfer
 
         try {
             $paymentIntent = PaymentIntent::create($params);
@@ -113,6 +115,7 @@ class StripeService
             Log::info('Stripe PaymentIntent created', [
                 'payment_intent_id' => $paymentIntent->id,
                 'amount' => $amount,
+                'platform_fee_amount' => $platformFeeAmount,
                 'status' => $paymentIntent->status,
             ]);
 
@@ -121,6 +124,7 @@ class StripeService
             Log::error('Stripe PaymentIntent creation failed', [
                 'error' => $e->getMessage(),
                 'amount' => $amount,
+                'platform_fee_amount' => $platformFeeAmount,
             ]);
             throw $e;
         }

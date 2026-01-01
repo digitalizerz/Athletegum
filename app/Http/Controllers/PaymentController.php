@@ -42,16 +42,16 @@ class PaymentController extends Controller
         $walletBalance = (float) $user->wallet_balance ?? 0.00;
 
         // Calculate payment breakdown per marketplace rules:
-        // Business pays: deal_amount + (deal_amount × 10%)
+        // Business pays: deal_amount only
+        // Platform fee (10%) comes OUT OF the deal_amount
+        // Athlete receives: deal_amount - platform_fee (90% of deal_amount)
         $dealAmount = (float) $session->get('compensation_amount'); // Base deal amount
-        $businessFeePercentage = 10.0; // Fixed 10% business fee
-        $businessFeeAmount = round($dealAmount * ($businessFeePercentage / 100), 2);
-        $businessTotal = round($dealAmount + $businessFeeAmount, 2); // Total business pays
+        $platformFeePercentage = 10.0; // Fixed 10% platform fee
+        $platformFeeAmount = round($dealAmount * ($platformFeePercentage / 100), 2); // Platform fee deducted from deal_amount
+        $businessTotal = round($dealAmount, 2); // Business pays deal_amount only
         
-        // Escrow amount is the base deal amount (what athlete will eventually receive minus athlete fee)
+        // Escrow amount is the base deal amount (athlete will receive: deal_amount - platform_fee)
         $escrowAmount = round($dealAmount, 2);
-        $platformFeeAmount = $businessFeeAmount; // Platform fee from business
-        $platformFeePercentage = $businessFeePercentage;
 
         try {
             DB::beginTransaction();
@@ -72,7 +72,6 @@ class PaymentController extends Controller
                 $user->deductFromWallet($businessTotal, 'payment', null, [
                     'platform_fee_type' => 'percentage',
                     'platform_fee_percentage' => $platformFeePercentage,
-                    'platform_fee_value' => $businessFeePercentage,
                     'platform_fee_amount' => $platformFeeAmount,
                     'escrow_amount' => $escrowAmount,
                     'compensation_amount' => $dealAmount,
@@ -106,7 +105,6 @@ class PaymentController extends Controller
                     $user->deductFromWallet($walletAmountUsed, 'payment', null, [
                         'platform_fee_type' => 'percentage',
                         'platform_fee_percentage' => $platformFeePercentage,
-                        'platform_fee_value' => $businessFeePercentage,
                         'platform_fee_amount' => $walletPlatformFeeAmount,
                         'escrow_amount' => $escrowAmount,
                         'compensation_amount' => $dealAmount,
@@ -137,7 +135,7 @@ class PaymentController extends Controller
                     $paymentIntent = $this->stripeService->createPaymentIntent(
                         $cardAmount,
                         $paymentMethod->provider_payment_method_id,
-                        $cardPlatformFeeAmount, // Platform fee for card portion (for tracking only)
+                        $cardPlatformFeeAmount, // Platform fee for card portion (for metadata tracking only)
                         [
                             'user_id' => $user->id,
                             'deal_type' => $session->get('deal_type'),
@@ -221,7 +219,7 @@ class PaymentController extends Controller
                     $paymentIntent = $this->stripeService->createPaymentIntent(
                         $cardAmount,
                         $paymentMethod->provider_payment_method_id,
-                        $platformFeeAmount, // Platform fee (for tracking only - fees are handled in Stripe)
+                        $platformFeeAmount, // Platform fee (for metadata tracking only)
                         [
                             'user_id' => $user->id,
                             'deal_type' => $session->get('deal_type'),
@@ -285,11 +283,10 @@ class PaymentController extends Controller
             // Store payment info in session
             $session->put('platform_fee_type', 'percentage');
             $session->put('platform_fee_percentage', $platformFeePercentage);
-            $session->put('platform_fee_value', $businessFeePercentage);
             $session->put('platform_fee_amount', $platformFeeAmount);
             $session->put('escrow_amount', $escrowAmount);
             $session->put('compensation_amount', $dealAmount); // Store original deal amount
-            $session->put('total_amount', $businessTotal); // Business total (deal_amount + 10%)
+            $session->put('total_amount', $businessTotal); // Business total (deal_amount only)
             $session->put('wallet_amount_used', $walletAmountUsed ?? 0);
             $session->put('card_amount', $cardAmount ?? 0);
             $session->put('payment_intent_id', $paymentIntentId);
@@ -357,11 +354,15 @@ class PaymentController extends Controller
             DB::beginTransaction();
 
             // Calculate athlete payout per marketplace rules:
-            // Use stored values if available, otherwise recalculate (for backward compatibility)
-            $dealAmount = (float) $deal->escrow_amount; // This is the base deal amount (what athlete earns)
-            $athleteFeePercentage = $deal->athlete_fee_percentage ?? 5.0; // Use stored value or default to 5%
-            $athleteFeeAmount = $deal->athlete_fee_amount ?? round($dealAmount * ($athleteFeePercentage / 100), 2);
-            $athleteNetPayout = $deal->athlete_net_payout ?? round($dealAmount - $athleteFeeAmount, 2);
+            // Platform takes 10% via application_fee_amount at payment time
+            // Athlete receives: deal_amount - platform_fee_amount (90% of deal amount)
+            // Athletes pay $0 platform fee
+            $dealAmount = (float) $deal->compensation_amount; // Base deal amount
+            $platformFeePercentage = 10.0; // Platform fee is 10%
+            $platformFeeAmount = (float) ($deal->platform_fee_amount ?? round($dealAmount * ($platformFeePercentage / 100), 2));
+            $athleteFeePercentage = 0.0; // Athletes pay $0 platform fee
+            $athleteFeeAmount = 0.0; // No athlete fee
+            $athleteNetPayout = round($dealAmount - $platformFeeAmount, 2); // Athlete receives deal_amount - platform_fee
 
             // Get athlete's Stripe account ID
             $athlete = $deal->athlete;
@@ -570,9 +571,11 @@ class PaymentController extends Controller
                         'deal_id' => (string) $deal->id,
                         'athlete_id' => (string) $athlete->id,
                         'deal_amount' => (string) $dealAmount,
-                        'athlete_fee_percentage' => (string) $athleteFeePercentage,
-                        'athlete_fee_amount' => (string) $athleteFeeAmount,
-                        'athlete_net_payout' => (string) $athleteNetPayout,
+                        'platform_fee_percentage' => (string) $platformFeePercentage,
+                        'platform_fee_amount' => (string) $platformFeeAmount,
+                        'athlete_fee_percentage' => (string) $athleteFeePercentage, // 0%
+                        'athlete_fee_amount' => (string) $athleteFeeAmount, // $0
+                        'athlete_net_payout' => (string) $athleteNetPayout, // deal_amount - platform_fee
                         'payout_id' => (string) $payout->id,
                     ]
                 );
