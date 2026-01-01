@@ -44,7 +44,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         // Always redirect to admin dashboard
-        return redirect()->route('admin.dashboard', absolute: false);
+        return redirect()->intended(route('admin.dashboard', absolute: false));
     }
 
     /**
@@ -58,6 +58,6 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return redirect()->route('admin.login');
+        return redirect()->route('admin.login', absolute: false);
     }
 }

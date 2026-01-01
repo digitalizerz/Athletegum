@@ -26,14 +26,14 @@ class AuthenticatedSessionController extends Controller
     {
         $request->authenticate();
 
-        // Block admin users from logging in on business domain
+        // Redirect superadmin users to admin login
         if (Auth::user()->is_superadmin) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
             
-            return redirect('https://admin.athletegum.com/login')
-                ->withErrors(['email' => 'Admin accounts must log in at admin.athletegum.com']);
+            return redirect()->route('admin.login')
+                ->withErrors(['email' => 'Admin accounts must log in at /admin/login']);
         }
 
         $request->session()->regenerate();
