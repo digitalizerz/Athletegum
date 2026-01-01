@@ -25,12 +25,12 @@ Route::domain('admin.athletegum.com')->group(function () {
         return redirect()->route('admin.login');
     });
 
-    // Admin Authentication Routes (explicitly defined to avoid conflicts)
+    // Admin Authentication Routes (explicitly defined to avoid conflicts with business login)
     Route::middleware('guest')->group(function () {
-        Route::get('/login', [AuthenticatedSessionController::class, 'create'])
+        Route::get('/login', [\App\Http\Controllers\Admin\Auth\AuthenticatedSessionController::class, 'create'])
             ->name('admin.login');
 
-        Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+        Route::post('/login', [\App\Http\Controllers\Admin\Auth\AuthenticatedSessionController::class, 'store']);
     });
 
     Route::middleware('auth')->group(function () {
