@@ -111,9 +111,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
 });
 
-// ✅ STRIPE WEBHOOK — PUBLIC (NO AUTH)
-Route::post('/stripe/webhook', [\App\Http\Controllers\StripeWebhookController::class, 'handle']);
-
 // Public route for viewing deals by token
 Route::get('/deal/{token}', [DealController::class, 'showByToken'])->name('deals.show.token');
 
