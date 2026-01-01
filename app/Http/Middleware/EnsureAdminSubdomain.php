@@ -19,7 +19,7 @@ class EnsureAdminSubdomain
     {
         // This middleware is only applied to admin subdomain routes via domain constraint
         // If user is authenticated but not admin, redirect to main site
-        if (Auth::check() && !Auth::user()->is_admin) {
+        if (Auth::check() && !Auth::user()->is_superadmin) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

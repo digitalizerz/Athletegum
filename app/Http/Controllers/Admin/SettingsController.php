@@ -13,7 +13,7 @@ class SettingsController extends Controller
     {
         // Middleware is handled in routes
         // Additional admin check
-        if (Auth::check() && !Auth::user()->is_admin) {
+        if (Auth::check() && !Auth::user()->is_superadmin) {
             abort(403, 'Unauthorized access. Admin privileges required.');
         }
     }

@@ -23,7 +23,7 @@ class EnsureAdmin
             abort(403, 'Admin routes are only accessible on admin.athletegum.com');
         }
 
-        if (!Auth::check() || !Auth::user()->is_admin) {
+        if (!Auth::check() || !Auth::user()->is_superadmin) {
             // Redirect to admin login if not authenticated or not admin
             return redirect()->route('admin.login');
         }

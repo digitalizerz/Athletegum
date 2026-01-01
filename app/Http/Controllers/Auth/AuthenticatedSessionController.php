@@ -27,7 +27,7 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         // Block admin users from logging in on business domain
-        if (Auth::user()->is_admin) {
+        if (Auth::user()->is_superadmin) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

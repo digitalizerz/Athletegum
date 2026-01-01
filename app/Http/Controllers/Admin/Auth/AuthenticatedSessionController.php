@@ -29,7 +29,7 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         // Check if user is an admin
-        if (!Auth::user()->is_admin) {
+        if (!Auth::user()->is_superadmin) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

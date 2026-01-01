@@ -118,7 +118,7 @@
                 </a>
             </li>
 
-            @if(Auth::user()->is_admin)
+            @if(Auth::user()->is_superadmin)
             <li>
                 <a href="{{ route('admin.settings') }}" 
                    class="{{ request()->routeIs('admin.*') ? 'active' : '' }}">

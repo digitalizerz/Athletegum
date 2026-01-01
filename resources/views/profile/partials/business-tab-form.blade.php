@@ -53,7 +53,7 @@
                 </div>
 
                 {{-- Edit Form --}}
-                <form x-show="editing" method="post" action="{{ Auth::user()->is_admin ? route('admin.profile.update') : route('profile.update') }}" class="space-y-6">
+                <form x-show="editing" method="post" action="{{ Auth::user()->is_superadmin ? route('admin.profile.update') : route('profile.update') }}" class="space-y-6">
                     @csrf
                     @method('patch')
 

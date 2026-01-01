@@ -12,14 +12,14 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 |
 | These routes are only accessible on admin.athletegum.com subdomain
-| All routes require admin authentication via is_admin field
+| All routes require admin authentication via is_superadmin field
 |
 */
 
 Route::domain('admin.athletegum.com')->group(function () {
     // Root redirect to dashboard for authenticated admins
     Route::get('/', function () {
-        if (Auth::check() && Auth::user()->is_admin) {
+        if (Auth::check() && Auth::user()->is_superadmin) {
             return redirect()->route('admin.dashboard');
         }
         return redirect()->route('admin.login');
