@@ -66,9 +66,16 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+        // Business Revenue Dashboard
+        Route::prefix('business/revenue')->name('business.revenue.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Business\RevenueController::class, 'index'])->name('index');
+            Route::get('/deals', [\App\Http\Controllers\Business\RevenueController::class, 'deals'])->name('deals');
+            Route::get('/athletes', [\App\Http\Controllers\Business\RevenueController::class, 'athletes'])->name('athletes');
+        });
 
     // Deals
     Route::get('/deals', [DealController::class, 'index'])->name('deals.index');

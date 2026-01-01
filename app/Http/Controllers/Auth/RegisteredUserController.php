@@ -43,17 +43,24 @@ class RegisteredUserController extends Controller
 
         event(new Registered($user));
 
-        // Explicitly send verification email
-        try {
-            $user->sendEmailVerificationNotification();
-            \Log::info('Verification email sent', ['user_id' => $user->id, 'email' => $user->email]);
-        } catch (\Exception $e) {
-            \Log::error('Failed to send verification email', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
+        // Auto-verify email in local environment only
+        if (app()->environment('local')) {
+            $user->email_verified_at = now();
+            $user->save();
+            \Log::info('Email auto-verified in local environment', ['user_id' => $user->id, 'email' => $user->email]);
+        } else {
+            // Explicitly send verification email in non-local environments
+            try {
+                $user->sendEmailVerificationNotification();
+                \Log::info('Verification email sent', ['user_id' => $user->id, 'email' => $user->email]);
+            } catch (\Exception $e) {
+                \Log::error('Failed to send verification email', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
         }
 
         Auth::login($user);
