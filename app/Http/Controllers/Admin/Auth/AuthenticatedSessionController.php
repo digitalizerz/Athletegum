@@ -22,13 +22,15 @@ class AuthenticatedSessionController extends Controller
 
     /**
      * Handle an incoming admin authentication request.
+     * 
+     * Domain enforcement is handled by middleware, not in this controller.
      */
     public function store(LoginRequest $request): RedirectResponse
     {
         // Authenticate the user using Breeze's LoginRequest
         $request->authenticate();
 
-        // Check if user is an admin
+        // Check if user is a superadmin
         if (!Auth::user()->is_superadmin) {
             Auth::logout();
             $request->session()->invalidate();
@@ -42,7 +44,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         // Always redirect to admin dashboard
-        return redirect()->intended(route('admin.dashboard', absolute: false));
+        return redirect()->route('admin.dashboard', absolute: false);
     }
 
     /**
