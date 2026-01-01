@@ -16,30 +16,29 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::domain('admin.athletegum.com')->group(function () {
-    // Root redirect to dashboard for authenticated admins
-    Route::get('/', function () {
-        if (Auth::check() && Auth::user()->is_superadmin) {
-            return redirect()->route('admin.dashboard');
-        }
-        return redirect()->route('admin.login');
-    });
+// Root redirect to dashboard for authenticated admins
+Route::get('/', function () {
+    if (Auth::check() && Auth::user()->is_superadmin) {
+        return redirect()->route('admin.dashboard');
+    }
+    return redirect()->route('admin.login');
+});
 
-    // Admin Authentication Routes (explicitly defined to avoid conflicts with business login)
-    Route::middleware('guest')->group(function () {
-        Route::get('/login', [\App\Http\Controllers\Admin\Auth\AuthenticatedSessionController::class, 'create'])
-            ->name('admin.login');
+// Admin Authentication Routes
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [AuthenticatedSessionController::class, 'create'])
+        ->name('admin.login');
 
-        Route::post('/login', [\App\Http\Controllers\Admin\Auth\AuthenticatedSessionController::class, 'store']);
-    });
+    Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+});
 
-    Route::middleware('auth')->group(function () {
-        Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
-            ->name('admin.logout');
-    });
+Route::middleware('auth')->group(function () {
+    Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
+        ->name('admin.logout');
+});
 
-    // Admin Dashboard & Management Routes (require admin middleware)
-    Route::middleware(['auth', \App\Http\Middleware\EnsureAdmin::class])->group(function () {
+// Admin Dashboard & Management Routes (require admin middleware)
+Route::middleware(['auth', \App\Http\Middleware\EnsureAdmin::class])->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Admin\SuperAdminController::class, 'index'])->name('admin.dashboard');
     
     // User Management
@@ -83,8 +82,8 @@ Route::domain('admin.athletegum.com')->group(function () {
     Route::get('/audit-logs', [\App\Http\Controllers\Admin\SuperAdminController::class, 'auditLogs'])->name('admin.audit-logs.index');
     
     // Settings (redirects to Stripe & Fees)
-    Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index'])->name('admin.settings');
-    Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update'])->name('admin.settings.update');
+    Route::get('/settings', [SettingsController::class, 'index'])->name('admin.settings');
+    Route::post('/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
     
     // Stripe & Fees Management
     Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('admin.stripe-fees.index');
@@ -96,8 +95,7 @@ Route::domain('admin.athletegum.com')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('admin.profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('admin.profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('admin.profile.destroy');
-    });
-
-    // Stop impersonating route (accessible outside admin middleware)
-    Route::post('/stop-impersonating', [\App\Http\Controllers\Admin\SuperAdminController::class, 'stopImpersonating'])->name('admin.stop-impersonating');
 });
+
+// Stop impersonating route (accessible outside admin middleware)
+Route::post('/stop-impersonating', [\App\Http\Controllers\Admin\SuperAdminController::class, 'stopImpersonating'])->name('admin.stop-impersonating');
