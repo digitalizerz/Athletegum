@@ -172,8 +172,9 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::get('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'show'])->name('deals.messages');
         Route::post('/deals/{deal}/messages', [\App\Http\Controllers\Athlete\DealMessageController::class, 'store'])->name('deals.messages.store');
         
-        // Earnings routes
-        Route::get('/earnings', [\App\Http\Controllers\Athlete\EarningsController::class, 'index'])->name('earnings.index');
+            // Earnings routes
+            Route::get('/earnings', [\App\Http\Controllers\Athlete\EarningsController::class, 'index'])->name('earnings.index');
+            Route::get('/earnings/payout-history', [\App\Http\Controllers\Athlete\EarningsController::class, 'payoutHistory'])->name('earnings.payout-history');
         Route::get('/earnings/withdraw', [\App\Http\Controllers\Athlete\EarningsController::class, 'createWithdrawal'])->name('earnings.withdraw');
         Route::post('/earnings/withdraw', [\App\Http\Controllers\Athlete\EarningsController::class, 'storeWithdrawal'])->name('earnings.withdraw.store');
         Route::get('/earnings/payment-method/create', [\App\Http\Controllers\Athlete\EarningsController::class, 'createPaymentMethod'])->name('earnings.payment-method.create');

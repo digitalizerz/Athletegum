@@ -50,6 +50,22 @@ class EarningsController extends Controller
     }
 
     /**
+     * Show payout history for athlete
+     */
+    public function payoutHistory()
+    {
+        $athlete = Auth::guard('athlete')->user();
+        
+        // Get all payouts for this athlete with deal information
+        $payouts = \App\Models\Payout::where('athlete_id', $athlete->id)
+            ->with(['deal.user']) // Load deal and business user
+            ->orderBy('released_at', 'desc')
+            ->paginate(20);
+        
+        return view('athlete.earnings.payout-history', compact('athlete', 'payouts'));
+    }
+
+    /**
      * Show form to add payment method
      */
     public function createPaymentMethod()

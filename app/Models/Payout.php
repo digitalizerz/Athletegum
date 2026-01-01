@@ -42,4 +42,33 @@ class Payout extends Model
     {
         return $this->belongsTo(User::class, 'released_by_admin_id');
     }
+
+    /**
+     * Get human-readable payout status label for athletes
+     * Status is derived from payout status and deal transfer status
+     * 
+     * @return string 'Processing' or 'Completed'
+     */
+    public function getPayoutStatusLabelAttribute(): string
+    {
+        // Load deal relationship if not already loaded
+        if (!$this->relationLoaded('deal')) {
+            $this->load('deal');
+        }
+
+        $deal = $this->deal;
+        
+        // If payout is completed, it's completed
+        if ($this->status === 'completed') {
+            return 'Completed';
+        }
+
+        // If deal transfer status is 'paid', payout is completed
+        if ($deal && $deal->stripe_transfer_status === 'paid') {
+            return 'Completed';
+        }
+
+        // Otherwise, it's processing (transfer created but not yet deposited)
+        return 'Processing';
+    }
 }

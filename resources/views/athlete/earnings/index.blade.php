@@ -72,7 +72,12 @@
 
         <!-- Divider -->
         <div class="divider">
-            <span class="text-sm font-medium text-base-content/60">Payouts</span>
+            <div class="flex items-center justify-between w-full">
+                <span class="text-sm font-medium text-base-content/60">Payouts</span>
+                <a href="{{ route('athlete.earnings.payout-history') }}" class="text-sm text-primary hover:underline">
+                    View payout history →
+                </a>
+            </div>
         </div>
 
         <!-- Payout Status (Single Consolidated Section) -->

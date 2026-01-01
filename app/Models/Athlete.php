@@ -166,6 +166,14 @@ class Athlete extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Get payouts for this athlete (released funds from deals)
+     */
+    public function payouts()
+    {
+        return $this->hasMany(\App\Models\Payout::class);
+    }
+
+    /**
      * Send the password reset notification.
      */
     public function sendPasswordResetNotification($token)
