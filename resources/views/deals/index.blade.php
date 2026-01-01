@@ -261,6 +261,15 @@
                                     </td>
                                     <td>
                                         @php
+                                            // Business-friendly status labels
+                                            $statusLabels = [
+                                                'draft' => 'Draft',
+                                                'pending' => 'Pending Acceptance',
+                                                'accepted' => 'In Progress',
+                                                'active' => 'In Progress',
+                                                'completed' => 'Completed',
+                                                'cancelled' => 'Cancelled',
+                                            ];
                                             $statusBadges = [
                                                 'draft' => 'badge-ghost',
                                                 'pending' => 'badge-warning',
@@ -269,17 +278,18 @@
                                                 'completed' => 'badge-success',
                                                 'cancelled' => 'badge-error',
                                             ];
+                                            $statusLabel = $statusLabels[$deal->status] ?? ucfirst($deal->status);
                                             $statusBadge = $statusBadges[$deal->status] ?? 'badge-ghost';
                                         @endphp
                                         <span class="badge {{ $statusBadge }}">
-                                            {{ ucfirst($deal->status) }}
+                                            {{ $statusLabel }}
                                         </span>
                                         @if($deal->isInEscrow())
                                             <div class="text-xs text-base-content/60 mt-1">
                                                 @if($deal->awaiting_funds)
-                                                    <span class="badge badge-warning badge-sm" title="Payment complete – payout pending clearing">Payout Pending Clearing</span>
+                                                    <span class="badge badge-info badge-sm">Processing</span>
                                                 @else
-                                                    <span class="badge badge-warning badge-sm">In Escrow</span>
+                                                    <span class="badge badge-info badge-sm">In Escrow</span>
                                                 @endif
                                             </div>
                                         @elseif($deal->released_at)

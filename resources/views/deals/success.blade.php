@@ -54,16 +54,27 @@ use Illuminate\Support\Facades\Storage;
                             <div class="text-sm font-semibold text-base-content/60 mb-2">Status</div>
                             <div>
                                 @php
+                                    // Business-friendly status labels
+                                    $statusLabels = [
+                                        'draft' => 'Draft',
+                                        'pending' => 'Pending Acceptance',
+                                        'accepted' => 'In Progress',
+                                        'active' => 'In Progress',
+                                        'completed' => 'Completed',
+                                        'cancelled' => 'Cancelled',
+                                    ];
                                     $statusBadges = [
                                         'draft' => 'badge-ghost',
                                         'pending' => 'badge-warning',
                                         'accepted' => 'badge-info',
+                                        'active' => 'badge-info',
                                         'completed' => 'badge-success',
                                         'cancelled' => 'badge-error',
                                     ];
+                                    $statusLabel = $statusLabels[$deal->status] ?? ucfirst($deal->status);
                                     $statusBadge = $statusBadges[$deal->status] ?? 'badge-ghost';
                                 @endphp
-                                <span class="badge {{ $statusBadge }}">{{ ucfirst($deal->status) }}</span>
+                                <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
                             </div>
                         </div>
 
@@ -74,6 +85,14 @@ use Illuminate\Support\Facades\Storage;
                     </div>
                 </div>
             </div>
+
+            <!-- Payment Summary Card -->
+            @if($deal->paid_at || $deal->payment_status === 'paid' || $deal->payment_status === 'paid_escrowed')
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <x-payment-summary-card :deal="$deal" />
+                    <x-payment-timeline :deal="$deal" />
+                </div>
+            @endif
 
             <!-- Deliverables Section -->
             @if($deal->completed_at && !empty($deal->deliverables))
