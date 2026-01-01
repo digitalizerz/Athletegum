@@ -13,8 +13,9 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function () {
             // Load admin subdomain routes
             // Domain constraint in routes/admin.php handles subdomain routing
-            Route::middleware('web')
-                ->group(base_path('routes/admin.php'));
+            Route::middleware('web')->group(function () {
+                require base_path('routes/admin.php');
+            });
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
