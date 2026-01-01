@@ -579,14 +579,25 @@ class PaymentController extends Controller
 
                 $releaseTransactionId = $transfer->id;
 
-                // Update payout record with transfer ID
+                // Update payout record with transfer ID (status remains 'pending' until webhook confirms)
                 $payout->update([
                     'stripe_transfer_id' => $transfer->id,
-                    'status' => 'completed',
-                    'released_at' => now(),
+                    'status' => 'pending', // Keep as pending - webhook will update to 'completed'
                 ]);
 
-                Log::info('Stripe transfer created successfully', [
+                // Store transfer ID on deal but DO NOT mark as released yet
+                // Wait for Stripe webhook (transfer.paid) to confirm transfer succeeded
+                // Also store fee information for reference
+                $deal->update([
+                    'stripe_transfer_id' => $transfer->id,
+                    'stripe_transfer_status' => 'pending', // Will be updated by webhook
+                    'release_transaction_id' => $transfer->id,
+                    'athlete_fee_percentage' => $athleteFeePercentage,
+                    'athlete_fee_amount' => $athleteFeeAmount,
+                    'athlete_net_payout' => $athleteNetPayout,
+                ]);
+
+                Log::info('Stripe transfer created - waiting for webhook confirmation', [
                     'deal_id' => $deal->id,
                     'transfer_id' => $transfer->id,
                     'athlete_id' => $athlete->id,
@@ -594,7 +605,14 @@ class PaymentController extends Controller
                     'amount' => $athleteNetPayout,
                     'idempotency_key' => $idempotencyKey,
                     'payout_id' => $payout->id,
+                    'note' => 'Deal will be marked as released when transfer.paid webhook is received',
                 ]);
+
+                // Commit transaction - transfer is created, but deal is NOT released yet
+                DB::commit();
+
+                // Return success message - transfer is in progress
+                return redirect()->back()->with('success', 'Payment transfer initiated. The deal will be marked as released once Stripe confirms the transfer. This typically takes a few seconds.');
             } catch (InvalidRequestException $e) {
                 $errorMessage = $e->getMessage();
                 $stripeErrorCode = $e->getStripeCode() ?? 'unknown';
@@ -654,84 +672,9 @@ class PaymentController extends Controller
                 ]);
             }
             
-            // Update deal status to 'released' (escrow has been released)
-            $wasApproved = $deal->is_approved;
-            $updateData = [
-                'released_at' => now(),
-                'release_transaction_id' => $releaseTransactionId,
-                'status' => 'completed',
-                'payment_status' => 'released', // Mark as released
-                'athlete_fee_percentage' => $athleteFeePercentage,
-                'athlete_fee_amount' => $athleteFeeAmount,
-                'athlete_net_payout' => $athleteNetPayout,
-            ];
-            
-            // Auto-approve if releasing from completed status
-            if (!$wasApproved) {
-                $updateData['is_approved'] = true;
-                $updateData['approved_at'] = now();
-            }
-            
-            $deal->update($updateData);
-
-            // Create wallet transaction for the release (even though funds were already deducted)
-            \App\Models\WalletTransaction::create([
-                'user_id' => $deal->user_id,
-                'type' => 'payment_release',
-                'status' => 'completed',
-                'amount' => 0, // Already deducted, just a record
-                'balance_before' => Auth::user()->wallet_balance,
-                'balance_after' => Auth::user()->wallet_balance,
-                'payment_provider_transaction_id' => $releaseTransactionId,
-                'deal_id' => $deal->id,
-                'description' => "Payment released to athlete for deal #{$deal->id}",
-            ]);
-
-            // Create system message
-            $messageText = $wasApproved 
-                ? "Payment released from escrow"
-                : "Deal approved and payment released from escrow";
-            \App\Models\Message::createSystemMessage(
-                $deal->id,
-                $messageText
-            );
-
-            // Create notification for athlete
-            if ($deal->athlete_id && $deal->athlete) {
-                \App\Models\Notification::createForAthlete(
-                    $deal->athlete_id,
-                    'payment_released',
-                    'Payment Released',
-                    'Payment of $' . number_format($athleteNetPayout, 2) . ' has been released to your account',
-                    route('athlete.earnings.index'),
-                    $deal->id
-                );
-
-                // Send email to athlete
-                try {
-                    if ($deal->athlete->email) {
-                        \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
-                            new \App\Mail\PaymentReleasedMail($deal->athlete->name, $deal, $athleteNetPayout)
-                        );
-                        \Log::info('Payment released email sent', [
-                            'deal_id' => $deal->id,
-                            'athlete_email' => $deal->athlete->email,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Log::error('Failed to send payment released email', [
-                        'deal_id' => $deal->id,
-                        'athlete_id' => $deal->athlete_id,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
-                    ]);
-                    // Don't fail the payment release if email fails
-                }
-            }
-
-            DB::commit();
-
-            return redirect()->back()->with('success', 'Payment released successfully to athlete.');
+            // NOTE: Deal is NOT marked as released here
+            // The deal will be marked as released when the transfer.paid webhook is received
+            // This ensures Stripe is the source of truth
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->withErrors(['error' => 'Failed to release payment. Please try again.']);

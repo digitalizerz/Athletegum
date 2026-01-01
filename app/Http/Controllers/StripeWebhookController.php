@@ -166,26 +166,195 @@ class StripeWebhookController extends Controller
 
     /**
      * Handle transfer created (athlete payout)
+     * Stripe Transfers are considered successful immediately on transfer.created
      */
     protected function handleTransferCreated($transfer)
     {
-        // Log transfer for audit
-        Log::info('Stripe transfer created', [
+        Log::info('Stripe transfer created webhook received', [
             'transfer_id' => $transfer->id,
             'amount' => $transfer->amount / 100,
             'destination' => $transfer->destination,
         ]);
 
-        // Find deal by transfer metadata or charge ID
+        // Find deal by transfer metadata
+        if (isset($transfer->metadata['deal_id'])) {
+            $deal = Deal::find($transfer->metadata['deal_id']);
+
+            if (!$deal) {
+                Log::warning('Transfer created but deal not found', [
+                    'transfer_id' => $transfer->id,
+                    'deal_id' => $transfer->metadata['deal_id'] ?? null,
+                ]);
+                return;
+            }
+
+            // Also find the payout record
+            $payout = \App\Models\Payout::where('stripe_transfer_id', $transfer->id)->first();
+
+            try {
+                \Illuminate\Support\Facades\DB::beginTransaction();
+
+                // Update deal to released status - Stripe Transfer is successful on created
+                $wasApproved = $deal->is_approved;
+                $updateData = [
+                    'stripe_transfer_id' => $transfer->id,
+                    'stripe_transfer_status' => 'paid',
+                    'released_at' => now(),
+                    'release_transaction_id' => $transfer->id,
+                    'status' => 'completed',
+                    'payment_status' => 'released', // Mark as released - Stripe confirmed
+                ];
+
+                // Auto-approve if not already approved
+                if (!$wasApproved) {
+                    $updateData['is_approved'] = true;
+                    $updateData['approved_at'] = now();
+                }
+
+                $deal->update($updateData);
+
+                // Update payout record
+                if ($payout) {
+                    $payout->update([
+                        'status' => 'completed',
+                        'released_at' => now(),
+                    ]);
+                }
+
+                \Illuminate\Support\Facades\DB::commit();
+
+                // Create system message
+                $messageText = $wasApproved 
+                    ? "Payment released from escrow"
+                    : "Deal approved and payment released from escrow";
+                \App\Models\Message::createSystemMessage(
+                    $deal->id,
+                    $messageText
+                );
+
+                // Create notification for athlete
+                if ($deal->athlete_id && $deal->athlete) {
+                    \App\Models\Notification::createForAthlete(
+                        $deal->athlete_id,
+                        'payment_released',
+                        'Payment Released',
+                        "Your payment of $" . number_format($transfer->amount / 100, 2) . " has been released for deal #{$deal->id}",
+                        route('athlete.deals.show', $deal->id),
+                        $deal->id
+                    );
+                }
+
+                // Send email to athlete (if PaymentReleasedMail exists)
+                try {
+                    if ($deal->athlete && $deal->athlete->email) {
+                        if (class_exists(\App\Mail\PaymentReleasedMail::class)) {
+                            \Illuminate\Support\Facades\Mail::to($deal->athlete->email)->send(
+                                new \App\Mail\PaymentReleasedMail($deal->athlete->name, $deal, $transfer->amount / 100)
+                            );
+                            Log::info('Payment released email sent', [
+                                'deal_id' => $deal->id,
+                                'athlete_email' => $deal->athlete->email,
+                            ]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to send payment released email', [
+                        'deal_id' => $deal->id,
+                        'athlete_id' => $deal->athlete_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the payment release if email fails
+                }
+
+                Log::info('Deal marked as released via transfer.created webhook', [
+                    'deal_id' => $deal->id,
+                    'transfer_id' => $transfer->id,
+                    'payout_id' => $payout->id ?? null,
+                ]);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\DB::rollBack();
+                Log::error('Failed to process transfer.created webhook', [
+                    'deal_id' => $deal->id,
+                    'transfer_id' => $transfer->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        }
+    }
+
+
+    /**
+     * Handle transfer failed (athlete payout failed)
+     * Do NOT mark deal as released if transfer fails
+     */
+    protected function handleTransferFailed($transfer)
+    {
+        Log::warning('Stripe transfer failed webhook received', [
+            'transfer_id' => $transfer->id,
+            'amount' => $transfer->amount / 100,
+            'destination' => $transfer->destination,
+        ]);
+
+        // Find deal by transfer metadata
         if (isset($transfer->metadata['deal_id'])) {
             $deal = Deal::find($transfer->metadata['deal_id']);
 
             if ($deal) {
                 $deal->update([
-                    'release_transaction_id' => $transfer->id,
+                    'stripe_transfer_status' => 'failed',
                 ]);
 
-                Log::info('Deal release transfer confirmed', [
+                // Update payout record
+                $payout = \App\Models\Payout::where('stripe_transfer_id', $transfer->id)->first();
+                if ($payout) {
+                    $payout->update([
+                        'status' => 'failed',
+                        'error_message' => 'Transfer failed as reported by Stripe',
+                    ]);
+                }
+
+                Log::warning('Deal transfer failed - deal remains in paid_escrowed status', [
+                    'deal_id' => $deal->id,
+                    'transfer_id' => $transfer->id,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Handle transfer reversed (athlete payout reversed)
+     * Do NOT mark deal as released if transfer is reversed
+     */
+    protected function handleTransferReversed($transfer)
+    {
+        Log::warning('Stripe transfer reversed webhook received', [
+            'transfer_id' => $transfer->id,
+            'amount' => $transfer->amount / 100,
+            'destination' => $transfer->destination,
+        ]);
+
+        // Find deal by transfer metadata
+        if (isset($transfer->metadata['deal_id'])) {
+            $deal = Deal::find($transfer->metadata['deal_id']);
+
+            if ($deal) {
+                $deal->update([
+                    'stripe_transfer_status' => 'reversed',
+                    'payment_status' => 'paid_escrowed', // Revert to paid_escrowed
+                    'released_at' => null, // Clear released_at
+                ]);
+
+                // Update payout record
+                $payout = \App\Models\Payout::where('stripe_transfer_id', $transfer->id)->first();
+                if ($payout) {
+                    $payout->update([
+                        'status' => 'failed',
+                        'error_message' => 'Transfer reversed as reported by Stripe',
+                    ]);
+                }
+
+                Log::warning('Deal transfer reversed - deal reverted to paid_escrowed status', [
                     'deal_id' => $deal->id,
                     'transfer_id' => $transfer->id,
                 ]);

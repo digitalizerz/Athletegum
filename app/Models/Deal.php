@@ -35,6 +35,8 @@ class Deal extends Model
         'paid_at',
         'released_at',
         'release_transaction_id',
+        'stripe_transfer_id',
+        'stripe_transfer_status',
         'contract_text',
         'contract_signed',
         'contract_signed_at',
