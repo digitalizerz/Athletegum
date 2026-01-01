@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
+// ALL routes in web.php are BLOCKED on admin subdomain
+// Admin subdomain uses routes/admin.php exclusively
+Route::middleware([\App\Http\Middleware\BlockAdminSubdomain::class])->group(function () {
+    
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
@@ -197,3 +201,5 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+}); // End BlockAdminSubdomain middleware group - ALL web.php routes are blocked on admin subdomain

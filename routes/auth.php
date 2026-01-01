@@ -11,7 +11,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
-// Auth routes are only available on main domain (not admin subdomain)
+// Auth routes are ONLY available on main domain - exclude admin subdomain
 // Admin subdomain uses routes/admin.php for authentication
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])
@@ -19,7 +19,7 @@ Route::middleware('guest')->group(function () {
 
     Route::post('register', [RegisteredUserController::class, 'store']);
 
-    // Login routes - only on main domain (admin domain has its own login in routes/admin.php)
+    // Login routes - ONLY on main domain (admin subdomain blocked by BlockAdminSubdomain middleware)
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');
 
