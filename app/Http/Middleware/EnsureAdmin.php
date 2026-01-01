@@ -11,18 +11,12 @@ class EnsureAdmin
 {
     /**
      * Handle an incoming request.
-     * Ensures user is authenticated and is an admin.
+     * Ensures user is authenticated and is a superadmin.
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Enforce domain check - must be on admin subdomain
-        $host = $request->getHost();
-        if (strpos($host, 'admin.') !== 0) {
-            abort(403, 'Admin routes are only accessible on admin.athletegum.com');
-        }
-
         if (!Auth::check() || !Auth::user()->is_superadmin) {
             // Redirect to admin login if not authenticated or not admin
             return redirect()->route('admin.login');
