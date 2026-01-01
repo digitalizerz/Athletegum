@@ -13,7 +13,6 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function () {
             // Load admin subdomain routes
             Route::middleware(['web', \App\Http\Middleware\EnsureAdminSubdomain::class])
-                ->domain('admin.athletegum.com')
                 ->group(base_path('routes/admin.php'));
         },
     )

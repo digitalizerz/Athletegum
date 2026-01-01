@@ -17,9 +17,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     if (Auth::check()) {
-        if (Auth::user()->is_superadmin) {
-            return redirect()->route('admin.dashboard');
-        }
         return redirect()->route('dashboard');
     }
     if (Auth::guard('athlete')->check()) {
@@ -65,9 +62,6 @@ Route::get('/contact', function () {
 });
 
 Route::get('/dashboard', function () {
-    if (Auth::user()->is_superadmin) {
-        return redirect()->route('admin.dashboard');
-    }
     return view('dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
@@ -201,64 +195,5 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
         Route::post('/notifications/read-all', [\App\Http\Controllers\Athlete\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
     });
 });
-
-// Admin routes
-Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified', \App\Http\Middleware\EnsureSuperAdmin::class])->group(function () {
-    Route::get('/dashboard', [\App\Http\Controllers\Admin\SuperAdminController::class, 'index'])->name('dashboard');
-    
-    // User Management
-    Route::get('/users', [\App\Http\Controllers\Admin\SuperAdminController::class, 'users'])->name('users.index');
-    Route::get('/users/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showUser'])->name('users.show');
-    Route::post('/users/{user}/suspend', [\App\Http\Controllers\Admin\SuperAdminController::class, 'suspendUser'])->name('users.suspend');
-    Route::post('/users/{user}/reactivate', [\App\Http\Controllers\Admin\SuperAdminController::class, 'reactivateUser'])->name('users.reactivate');
-    Route::post('/users/{user}/impersonate', [\App\Http\Controllers\Admin\SuperAdminController::class, 'impersonateUser'])->name('users.impersonate');
-    Route::delete('/users/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteUsers'])->name('users.bulk-delete');
-    
-    // Deal Management
-    Route::get('/deals', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deals'])->name('deals.index');
-    Route::get('/deals/{deal}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showDeal'])->name('deals.show');
-    Route::post('/deals/{deal}/cancel', [\App\Http\Controllers\Admin\SuperAdminController::class, 'cancelDeal'])->name('deals.cancel');
-    Route::delete('/deals/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteDeals'])->name('deals.bulk-delete');
-    
-    // Deal Messages (Super Admin - Read-only)
-    Route::get('/deals/{deal}/messages', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showDealMessages'])->name('deals.messages');
-    
-    // Payments
-    Route::get('/payments', [\App\Http\Controllers\Admin\SuperAdminController::class, 'payments'])->name('payments.index');
-    
-    // Athlete Management
-    Route::get('/athletes', [\App\Http\Controllers\Admin\SuperAdminController::class, 'athletes'])->name('athletes.index');
-    Route::get('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showAthlete'])->name('athletes.show');
-    Route::get('/athletes/{athlete}/edit', [\App\Http\Controllers\Admin\SuperAdminController::class, 'editAthlete'])->name('athletes.edit');
-    Route::put('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'updateAthlete'])->name('athletes.update');
-    Route::delete('/athletes/{athlete}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deleteAthlete'])->name('athletes.delete');
-    Route::post('/athletes/{athlete}/hide', [\App\Http\Controllers\Admin\SuperAdminController::class, 'hideAthleteProfile'])->name('athletes.hide');
-    Route::post('/athletes/{athlete}/show', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showAthleteProfile'])->name('athletes.show-profile');
-    Route::delete('/athletes/bulk-delete', [\App\Http\Controllers\Admin\SuperAdminController::class, 'bulkDeleteAthletes'])->name('athletes.bulk-delete');
-    
-    // Business Management
-    Route::get('/businesses', [\App\Http\Controllers\Admin\SuperAdminController::class, 'businesses'])->name('businesses.index');
-    Route::get('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'showBusiness'])->name('businesses.show');
-    Route::get('/businesses/{user}/edit', [\App\Http\Controllers\Admin\SuperAdminController::class, 'editBusiness'])->name('businesses.edit');
-    Route::put('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'updateBusiness'])->name('businesses.update');
-    Route::delete('/businesses/{user}', [\App\Http\Controllers\Admin\SuperAdminController::class, 'deleteBusiness'])->name('businesses.delete');
-    
-    // Audit Logs
-    Route::get('/audit-logs', [\App\Http\Controllers\Admin\SuperAdminController::class, 'auditLogs'])->name('audit-logs.index');
-    
-    // Stripe & Fees Management
-    Route::get('/stripe-fees', [\App\Http\Controllers\Admin\StripeFeesController::class, 'index'])->name('stripe-fees.index');
-    Route::post('/stripe-fees/stripe/verify', [\App\Http\Controllers\Admin\StripeFeesController::class, 'verifyStripe'])->name('stripe-fees.verify-stripe');
-    Route::post('/stripe-fees/smb-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateSMBFee'])->name('stripe-fees.update-smb-fee');
-    Route::post('/stripe-fees/athlete-fee', [\App\Http\Controllers\Admin\StripeFeesController::class, 'updateAthleteFee'])->name('stripe-fees.update-athlete-fee');
-    
-    // Profile Settings (Admin)
-    Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [\App\Http\Controllers\ProfileController::class, 'destroy'])->name('profile.destroy');
-});
-
-// Stop impersonating route (accessible outside admin middleware)
-Route::post('/admin/stop-impersonating', [\App\Http\Controllers\Admin\SuperAdminController::class, 'stopImpersonating'])->name('admin.stop-impersonating');
 
 require __DIR__.'/auth.php';
