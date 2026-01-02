@@ -110,7 +110,20 @@ class BillingController extends Controller
         $subscriptionData['pending_subscription_plan'] = $user->pending_subscription_plan ?? null;
         $subscriptionData['end_date'] = $subscriptionEndDate;
 
-        return view('business.billing.index', compact('subscriptionData'));
+        // Calculate usage metrics for upgrade nudges
+        $activeDealsCount = \App\Models\Deal::where('user_id', $user->id)
+            ->whereIn('status', ['pending', 'active', 'revisions_requested', 'submitted'])
+            ->count();
+        
+        $maxActiveDeals = \App\Support\PlanFeatures::maxActiveDeals($user);
+        $hasReachedDealLimit = $maxActiveDeals !== null && $activeDealsCount >= $maxActiveDeals;
+
+        return view('business.billing.index', [
+            'subscriptionData' => $subscriptionData,
+            'activeDealsCount' => $activeDealsCount,
+            'hasReachedDealLimit' => $hasReachedDealLimit,
+            'maxActiveDeals' => $maxActiveDeals,
+        ]);
     }
 
     /**

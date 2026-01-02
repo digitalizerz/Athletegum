@@ -71,14 +71,21 @@
                                             <p class="text-sm text-yellow-800 mb-2">
                                                 Upgrade to contact this athlete
                                             </p>
-                                            <a 
-                                                href="{{ route('business.billing.index') }}" 
+                                            <button 
+                                                onclick="document.getElementById('upgrade-modal-email').showModal()"
                                                 class="inline-flex items-center px-4 py-2 bg-black border border-black rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition"
                                             >
                                                 Upgrade to Pro
-                                            </a>
+                                            </button>
                                         </div>
                                     </div>
+                                    
+                                    <x-upgrade-modal 
+                                        modalId="upgrade-modal-email"
+                                        title="🔓 Contact Athletes with Pro"
+                                        description="Upgrade to message athletes, create deals, and track performance."
+                                        actionText="Upgrade to Pro"
+                                    />
                                 @endif
                             </div>
 

@@ -29,6 +29,33 @@
                 </div>
             @endif
 
+            {{-- Usage-based upgrade nudges (Free users only) --}}
+            @if(($subscriptionData['plan'] === 'free' || !$subscriptionData['status'] || $subscriptionData['status'] === 'inactive'))
+                <div class="mb-6 space-y-3">
+                    @if(isset($hasReachedDealLimit) && $hasReachedDealLimit)
+                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p class="text-sm text-blue-800">
+                                <strong>You've reached the Free deal limit</strong> ({{ $activeDealsCount ?? 0 }}/{{ $maxActiveDeals ?? 3 }} active deals). Upgrade to create unlimited deals.
+                            </p>
+                        </div>
+                    @endif
+                    
+                    @if(isset($activeDealsCount) && $activeDealsCount > 0 && (!isset($hasReachedDealLimit) || !$hasReachedDealLimit))
+                        <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                            <p class="text-sm text-gray-700">
+                                You have {{ $activeDealsCount }} active {{ Str::plural('deal', $activeDealsCount) }}. Upgrade to create unlimited deals and access advanced features.
+                            </p>
+                        </div>
+                    @endif
+                    
+                    <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                        <p class="text-sm text-gray-700">
+                            <strong>Businesses on Pro close 3× more deals</strong> with access to athlete search, filters, and analytics.
+                        </p>
+                    </div>
+                </div>
+            @endif
+
             <div class="space-y-6">
                 <!-- Current Plan Card -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
@@ -163,8 +190,8 @@
                         <div class="p-6">
                             <h3 class="text-lg font-semibold mb-4">Upgrade Your Plan</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <!-- Pro Plan -->
-                                <div class="border border-gray-200 rounded-lg p-6">
+                                <!-- Pro Plan (Default Highlighted) -->
+                                <div class="border-2 border-primary shadow-lg rounded-lg p-6 relative">
                                     <h4 class="text-xl font-bold mb-2">Pro</h4>
                                     <p class="text-3xl font-bold mb-4">$49<span class="text-lg font-normal text-gray-600">/month</span></p>
                                     <ul class="space-y-2 mb-6 text-sm text-gray-600">
@@ -178,8 +205,11 @@
                                     </a>
                                 </div>
                                 
-                                <!-- Growth Plan -->
-                                <div class="border border-gray-200 rounded-lg p-6">
+                                <!-- Growth Plan (Best for agencies / power users) -->
+                                <div class="border border-gray-200 rounded-lg p-6 relative">
+                                    <div class="absolute -top-3 left-4 bg-gray-700 text-white text-xs px-2 py-1 rounded">
+                                        Best for agencies / power users
+                                    </div>
                                     <h4 class="text-xl font-bold mb-2">Growth</h4>
                                     <p class="text-3xl font-bold mb-4">$99<span class="text-lg font-normal text-gray-600">/month</span></p>
                                     <ul class="space-y-2 mb-6 text-sm text-gray-600">
