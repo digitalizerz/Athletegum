@@ -24,7 +24,7 @@
                 </a>
                 
                 <!-- Desktop Navigation -->
-                <nav class="hidden md:flex items-center space-x-8">
+                <nav class="hidden lg:flex items-center space-x-8">
                     <a href="{{ route('welcome') }}" class="text-white hover:text-white/80 transition text-sm font-medium">Home</a>
                     <a href="{{ route('pages.how-it-works') }}" class="text-white hover:text-white/80 transition text-sm font-medium">How It Works</a>
                     <a href="{{ route('pages.pricing') }}" class="text-white hover:text-white/80 transition text-sm font-medium">Pricing</a>
@@ -32,13 +32,13 @@
                 </nav>
                 
                 <!-- Desktop Right Side Actions -->
-                <div class="hidden md:flex items-center space-x-4">
+                <div class="hidden lg:flex items-center space-x-4">
                     <a href="{{ route('login') }}" class="text-white hover:text-white/80 transition text-sm font-medium px-4 py-2 rounded-lg border border-white">Business Sign In</a>
                     <a href="{{ route('athlete.login') }}" class="text-white hover:text-white/80 transition text-sm font-medium px-4 py-2 rounded-lg border border-white">Athlete Sign In</a>
                 </div>
                 
                 <!-- Mobile Menu Button -->
-                <button @click="open = !open" class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white">
+                <button @click="open = !open" class="lg:hidden inline-flex items-center justify-center p-2 rounded-md text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white">
                     <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
                         <path :class="{'hidden': open, 'inline-flex': !open}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                         <path :class="{'hidden': !open, 'inline-flex': open}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -47,7 +47,7 @@
             </div>
             
             <!-- Mobile Menu -->
-            <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" class="md:hidden absolute top-16 left-0 right-0 bg-black border-b border-white/10 z-50" style="display: none;">
+            <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" class="lg:hidden absolute top-16 left-0 right-0 bg-black border-b border-white/10 z-50" style="display: none;">
                 <div class="px-4 pt-2 pb-4 space-y-1">
                     <a href="{{ route('welcome') }}" class="block px-3 py-2 text-sm font-medium rounded-md text-white">Home</a>
                     <a href="{{ route('pages.how-it-works') }}" class="block px-3 py-2 text-sm font-medium rounded-md text-white">How It Works</a>
