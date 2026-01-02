@@ -4,6 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <meta name="color-scheme" content="light">
         <title>About - AthleteGum</title>
         
         <!-- Favicon -->
@@ -13,39 +14,27 @@
         <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700&display=swap" rel="stylesheet" />
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans antialiased bg-white text-black">
+    <body class="font-sans antialiased bg-white text-black" style="color-scheme: light !important;">
         <!-- Header -->
-        <header class="bg-white border-b border-gray-200 h-16">
+        <header class="bg-black border-b border-white/10 h-16">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
+                <!-- Logo -->
                 <a href="{{ route('welcome') }}">
-                    <x-athletegum-logo size="md" text-color="default" />
+                    <x-athletegum-logo size="md" text-color="white" />
                 </a>
-                <div class="relative" x-data="{ open: false }">
-                    <button 
-                        @click="open = !open"
-                        class="px-4 py-2 border border-gray-300 rounded-lg hover:border-gray-400 transition text-sm font-medium"
-                    >
-                        Log in
-                    </button>
-                    <div 
-                        x-show="open"
-                        @click.away="open = false"
-                        x-transition:enter="transition ease-out duration-100"
-                        x-transition:enter-start="opacity-0 scale-95"
-                        x-transition:enter-end="opacity-100 scale-100"
-                        x-transition:leave="transition ease-in duration-75"
-                        x-transition:leave-start="opacity-100 scale-100"
-                        x-transition:leave-end="opacity-0 scale-95"
-                        class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50"
-                        style="display: none;"
-                    >
-                        <a href="{{ route('login') }}" class="block px-4 py-2 text-sm text-gray-900 hover:bg-gray-100">
-                            Log in as Business
-                        </a>
-                        <a href="{{ route('athlete.login') }}" class="block px-4 py-2 text-sm text-gray-900 hover:bg-gray-100">
-                            Log in as Athlete
-                        </a>
-                    </div>
+                
+                <!-- Navigation -->
+                <nav class="hidden md:flex items-center space-x-8">
+                    <a href="{{ route('welcome') }}" class="text-white hover:text-white/80 transition text-sm font-medium">Home</a>
+                    <a href="{{ route('welcome') }}#how-it-works" class="text-white hover:text-white/80 transition text-sm font-medium">How It Works</a>
+                    <a href="{{ route('pages.pricing') }}" class="text-white hover:text-white/80 transition text-sm font-medium">Pricing</a>
+                    <a href="{{ route('pages.about') }}" class="text-white hover:text-white/80 transition text-sm font-medium">About</a>
+                </nav>
+                
+                <!-- Right Side Actions -->
+                <div class="flex items-center space-x-4">
+                    <a href="{{ route('login') }}" class="text-white hover:text-white/80 transition text-sm font-medium">Sign in</a>
+                    <a href="{{ route('register') }}" class="bg-white text-black px-4 py-2 rounded-lg hover:bg-white/90 transition text-sm font-semibold">Get started</a>
                 </div>
             </div>
         </header>
@@ -130,23 +119,23 @@
         </main>
 
         <!-- Footer -->
-        <footer class="bg-white border-t border-gray-200 py-12">
+        <footer class="bg-black border-t border-white/10 py-12">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-                    <x-athletegum-logo size="sm" text-color="default" />
+                    <x-athletegum-logo size="sm" text-color="white" />
                     
-                    <div class="flex flex-wrap justify-center gap-4 text-sm text-gray-600">
-                        <a href="{{ route('pages.about') }}" class="hover:text-black transition">About</a>
-                        <span class="text-gray-300">·</span>
-                        <a href="{{ route('pages.terms') }}" class="hover:text-black transition">Terms</a>
-                        <span class="text-gray-300">·</span>
-                        <a href="{{ route('pages.privacy') }}" class="hover:text-black transition">Privacy</a>
-                        <span class="text-gray-300">·</span>
-                        <a href="{{ route('pages.contact') }}" class="hover:text-black transition">Contact</a>
+                    <div class="flex flex-wrap justify-center gap-4 text-sm text-white/50">
+                        <a href="{{ route('pages.about') }}" class="hover:text-white transition">About</a>
+                        <span class="text-white/30">·</span>
+                        <a href="{{ route('pages.terms') }}" class="hover:text-white transition">Terms</a>
+                        <span class="text-white/30">·</span>
+                        <a href="{{ route('pages.privacy') }}" class="hover:text-white transition">Privacy</a>
+                        <span class="text-white/30">·</span>
+                        <a href="{{ route('pages.contact') }}" class="hover:text-white transition">Contact</a>
                     </div>
                 </div>
                 
-                <div class="mt-8 pt-8 border-t border-gray-200 text-center text-xs text-gray-500">
+                <div class="mt-8 pt-8 border-t border-white/10 text-center text-xs text-white/40">
                     <p>&copy; {{ date('Y') }} AthleteGum. All rights reserved.</p>
                 </div>
             </div>

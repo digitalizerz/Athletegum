@@ -32,6 +32,14 @@ Route::prefix('pages')->name('pages.')->group(function () {
         return view('pages.about');
     })->name('about');
     
+    Route::get('/how-it-works', function () {
+        return view('pages.how-it-works');
+    })->name('how-it-works');
+    
+    Route::get('/pricing', function () {
+        return view('pages.pricing');
+    })->name('pricing');
+    
     Route::get('/terms', function () {
         return view('pages.terms');
     })->name('terms');
