@@ -38,6 +38,8 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // Use intended() which preserves the URL user was trying to access (including /subscriptions/*)
+        // Falls back to dashboard only if no intended URL exists
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

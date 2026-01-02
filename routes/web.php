@@ -9,6 +9,7 @@ use App\Http\Controllers\DealController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\WalletController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -77,6 +78,14 @@ Route::middleware('auth')->group(function () {
             Route::get('/athletes', [\App\Http\Controllers\Business\RevenueController::class, 'athletes'])->name('athletes');
         });
 
+        // Business Billing
+        Route::prefix('business/billing')->name('business.billing.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Business\BillingController::class, 'index'])->name('index');
+            Route::post('/cancel', [\App\Http\Controllers\Business\BillingController::class, 'cancel'])->name('cancel');
+            Route::post('/change-plan/{plan}', [\App\Http\Controllers\Business\BillingController::class, 'changePlan'])->name('change-plan');
+            Route::get('/portal', [\App\Http\Controllers\Business\BillingController::class, 'portal'])->name('portal');
+        });
+
     // Deals
     Route::get('/deals', [DealController::class, 'index'])->name('deals.index');
     Route::delete('/deals/bulk-delete', [DealController::class, 'bulkDelete'])->name('deals.bulk-delete');
@@ -116,6 +125,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
     Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+
+    // Subscriptions
+    Route::get('/subscriptions/checkout/{plan}', [SubscriptionController::class, 'checkout'])->name('subscriptions.checkout');
+    Route::get('/subscriptions/success', [SubscriptionController::class, 'success'])->name('subscriptions.success');
+    Route::get('/subscriptions/cancel', [SubscriptionController::class, 'cancel'])->name('subscriptions.cancel');
 });
 
 // Public route for viewing deals by token

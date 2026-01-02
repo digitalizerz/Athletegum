@@ -8,6 +8,9 @@ use Stripe\PaymentMethod;
 use Stripe\Transfer;
 use Stripe\AccountLink;
 use Stripe\Account;
+use Stripe\Checkout\Session;
+use Stripe\Subscription;
+use Stripe\BillingPortal\Session as BillingPortalSession;
 use Stripe\Exception\ApiErrorException;
 use Illuminate\Support\Facades\Log;
 
@@ -401,6 +404,195 @@ class StripeService
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Create a subscription checkout session
+     * 
+     * @param int $userId User ID
+     * @param string $email User email
+     * @param string $name User name
+     * @param string $plan Subscription plan ('pro' or 'growth')
+     * @return Session Stripe Checkout Session
+     * @throws ApiErrorException
+     */
+    public function createSubscriptionCheckoutSession(
+        int $userId,
+        string $email,
+        string $name,
+        string $plan
+    ): Session {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        // Define plan prices (in cents)
+        $planPrices = [
+            'pro' => 4900, // $49.00
+            'growth' => 9900, // $99.00
+        ];
+
+        if (!isset($planPrices[$plan])) {
+            throw new \Exception('Invalid subscription plan');
+        }
+
+        $priceId = $this->getPriceIdForPlan($plan);
+        if (!$priceId) {
+            throw new \Exception('Price ID not configured for plan: ' . $plan);
+        }
+
+        // Get or create Stripe customer
+        $customerId = $this->getOrCreateCustomer($userId, $email, $name);
+
+        $checkoutSession = Session::create([
+            'customer' => $customerId,
+            'mode' => 'subscription',
+            'line_items' => [[
+                'price' => $priceId,
+                'quantity' => 1,
+            ]],
+            'success_url' => route('subscriptions.success') . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route('subscriptions.cancel'),
+            'metadata' => [
+                'user_id' => $userId,
+                'plan' => $plan,
+            ],
+            'subscription_data' => [
+                'metadata' => [
+                    'user_id' => $userId,
+                    'plan' => $plan,
+                ],
+            ],
+        ]);
+
+        Log::info('Stripe subscription checkout session created', [
+            'session_id' => $checkoutSession->id,
+            'user_id' => $userId,
+            'plan' => $plan,
+            'customer_id' => $customerId,
+        ]);
+
+        return $checkoutSession;
+    }
+
+    /**
+     * Get Price ID for a subscription plan
+     * This should be configured in .env or config
+     * 
+     * @param string $plan Plan name ('pro' or 'growth')
+     * @return string|null Price ID
+     */
+    protected function getPriceIdForPlan(string $plan): ?string
+    {
+        // Price IDs should be configured in .env
+        // Format: STRIPE_PRICE_PRO=price_xxx, STRIPE_PRICE_GROWTH=price_xxx
+        $envKey = 'STRIPE_PRICE_' . strtoupper($plan);
+        return env($envKey);
+    }
+
+    /**
+     * Retrieve a Stripe subscription
+     * 
+     * @param string $subscriptionId Subscription ID
+     * @return Subscription
+     * @throws ApiErrorException
+     */
+    public function retrieveSubscription(string $subscriptionId): Subscription
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        return Subscription::retrieve($subscriptionId);
+    }
+
+    /**
+     * Create a Stripe Billing Portal session
+     * 
+     * @param string $customerId Stripe Customer ID
+     * @param string $returnUrl URL to return to after portal session
+     * @return BillingPortalSession
+     * @throws ApiErrorException
+     */
+    public function createBillingPortalSession(string $customerId, string $returnUrl): BillingPortalSession
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        $session = BillingPortalSession::create([
+            'customer' => $customerId,
+            'return_url' => $returnUrl,
+        ]);
+
+        Log::info('Stripe billing portal session created', [
+            'session_id' => $session->id,
+            'customer_id' => $customerId,
+        ]);
+
+        return $session;
+    }
+
+    /**
+     * Update subscription to cancel at period end
+     * 
+     * @param string $subscriptionId Stripe Subscription ID
+     * @return Subscription
+     * @throws ApiErrorException
+     */
+    public function cancelSubscriptionAtPeriodEnd(string $subscriptionId): Subscription
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        $subscription = Subscription::update($subscriptionId, [
+            'cancel_at_period_end' => true,
+        ]);
+
+        Log::info('Stripe subscription set to cancel at period end', [
+            'subscription_id' => $subscriptionId,
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Change subscription plan (downgrade/upgrade)
+     * 
+     * @param string $subscriptionId Stripe Subscription ID
+     * @param string $newPriceId New Stripe Price ID
+     * @return Subscription
+     * @throws ApiErrorException
+     */
+    public function changeSubscriptionPlan(string $subscriptionId, string $newPriceId): Subscription
+    {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Stripe is not configured');
+        }
+
+        // Retrieve subscription to get current subscription item
+        $subscription = Subscription::retrieve($subscriptionId);
+        $subscriptionItemId = $subscription->items->data[0]->id;
+
+        // Update subscription with new price, no proration, unchanged billing cycle
+        $updatedSubscription = Subscription::update($subscriptionId, [
+            'items' => [
+                [
+                    'id' => $subscriptionItemId,
+                    'price' => $newPriceId,
+                ],
+            ],
+            'proration_behavior' => 'none',
+            'billing_cycle_anchor' => 'unchanged',
+        ]);
+
+        Log::info('Stripe subscription plan changed', [
+            'subscription_id' => $subscriptionId,
+            'new_price_id' => $newPriceId,
+        ]);
+
+        return $updatedSubscription;
     }
 }
 

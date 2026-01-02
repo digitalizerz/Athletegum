@@ -64,6 +64,22 @@ class StripeWebhookController extends Controller
                 $this->handleTransferCreated($event->data->object);
                 break;
 
+            case 'checkout.session.completed':
+                $this->handleCheckoutSessionCompleted($event->data->object);
+                break;
+
+            case 'customer.subscription.created':
+                $this->handleSubscriptionCreated($event->data->object);
+                break;
+
+            case 'customer.subscription.updated':
+                $this->handleSubscriptionUpdated($event->data->object);
+                break;
+
+            case 'customer.subscription.deleted':
+                $this->handleSubscriptionDeleted($event->data->object);
+                break;
+
             default:
                 Log::info('Unhandled Stripe webhook event', [
                     'event_type' => $event->type,
@@ -360,6 +376,237 @@ class StripeWebhookController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Handle checkout session completed
+     * This fires when a subscription checkout is completed
+     */
+    protected function handleCheckoutSessionCompleted($session)
+    {
+        Log::info('Stripe checkout session completed', [
+            'session_id' => $session->id,
+            'mode' => $session->mode,
+        ]);
+
+        // Only handle subscription checkouts
+        if ($session->mode !== 'subscription') {
+            return;
+        }
+
+        // The subscription.created webhook will handle the actual subscription setup
+        // This is just for logging
+        if (isset($session->metadata['user_id'])) {
+            Log::info('Subscription checkout completed for user', [
+                'user_id' => $session->metadata['user_id'],
+                'plan' => $session->metadata['plan'] ?? null,
+                'subscription_id' => $session->subscription ?? null,
+            ]);
+        }
+    }
+
+    /**
+     * Handle subscription created
+     */
+    protected function handleSubscriptionCreated($subscription)
+    {
+        Log::info('Stripe subscription created webhook received', [
+            'subscription_id' => $subscription->id,
+            'customer_id' => $subscription->customer,
+            'status' => $subscription->status,
+        ]);
+
+        $user = $this->findUserByCustomerId($subscription->customer);
+        if (!$user) {
+            Log::warning('Subscription created but user not found', [
+                'subscription_id' => $subscription->id,
+                'customer_id' => $subscription->customer,
+            ]);
+            return;
+        }
+
+        // Determine plan from price or metadata
+        $plan = $this->determinePlanFromSubscription($subscription);
+
+        $user->update([
+            'subscription_plan' => $plan,
+            'subscription_status' => $subscription->status,
+            'stripe_subscription_id' => $subscription->id,
+        ]);
+
+        Log::info('User subscription created', [
+            'user_id' => $user->id,
+            'subscription_id' => $subscription->id,
+            'plan' => $plan,
+            'status' => $subscription->status,
+        ]);
+    }
+
+    /**
+     * Handle subscription updated
+     * Webhook is the source of truth for subscription state
+     */
+    protected function handleSubscriptionUpdated($subscription)
+    {
+        Log::info('Stripe subscription updated webhook received', [
+            'subscription_id' => $subscription->id,
+            'customer_id' => $subscription->customer,
+            'status' => $subscription->status,
+            'cancel_at_period_end' => $subscription->cancel_at_period_end ?? false,
+        ]);
+
+        $user = $this->findUserByCustomerId($subscription->customer);
+        if (!$user) {
+            Log::warning('Subscription updated but user not found', [
+                'subscription_id' => $subscription->id,
+                'customer_id' => $subscription->customer,
+            ]);
+            return;
+        }
+
+        // Determine plan from price or metadata
+        $plan = $this->determinePlanFromSubscription($subscription);
+
+        // Handle cancel_at_period_end
+        if ($subscription->cancel_at_period_end === true) {
+            // Subscription is set to cancel at period end
+            $updateData = [
+                'subscription_status' => 'cancelling',
+                'subscription_plan' => $plan, // Keep current plan until cancellation
+                'stripe_subscription_id' => $subscription->id,
+            ];
+        } else {
+            // Check if plan changed (compare with current plan or pending plan)
+            $currentPlan = $user->subscription_plan;
+            $hasPlanChanged = $plan !== $currentPlan;
+            
+            // If there was a pending plan change and it matches the new plan, apply it
+            if ($hasPlanChanged && $user->pending_subscription_plan === $plan) {
+                // Plan change has taken effect
+                $updateData = [
+                    'subscription_plan' => $plan,
+                    'subscription_status' => $subscription->status === 'active' ? 'active' : $subscription->status,
+                    'pending_subscription_plan' => null, // Clear pending
+                    'stripe_subscription_id' => $subscription->id,
+                ];
+            } else {
+                // Regular status update
+                $updateData = [
+                    'subscription_plan' => $plan,
+                    'subscription_status' => $subscription->status,
+                    'stripe_subscription_id' => $subscription->id,
+                ];
+            }
+        }
+
+        $user->update($updateData);
+
+        Log::info('User subscription updated via webhook', [
+            'user_id' => $user->id,
+            'subscription_id' => $subscription->id,
+            'plan' => $plan,
+            'status' => $updateData['subscription_status'],
+            'cancel_at_period_end' => $subscription->cancel_at_period_end ?? false,
+        ]);
+    }
+
+    /**
+     * Handle subscription deleted (cancelled)
+     * Webhook is the source of truth - subscription is fully cancelled
+     */
+    protected function handleSubscriptionDeleted($subscription)
+    {
+        Log::info('Stripe subscription deleted webhook received', [
+            'subscription_id' => $subscription->id,
+            'customer_id' => $subscription->customer,
+            'status' => $subscription->status,
+        ]);
+
+        $user = $this->findUserByCustomerId($subscription->customer);
+        if (!$user) {
+            Log::warning('Subscription deleted but user not found', [
+                'subscription_id' => $subscription->id,
+                'customer_id' => $subscription->customer,
+            ]);
+            return;
+        }
+
+        // Subscription is fully cancelled - reset to free
+        $user->update([
+            'subscription_plan' => 'free',
+            'subscription_status' => 'inactive',
+            'pending_subscription_plan' => null,
+            'stripe_subscription_id' => null,
+        ]);
+
+        Log::info('User subscription deleted - reset to free', [
+            'user_id' => $user->id,
+            'subscription_id' => $subscription->id,
+        ]);
+    }
+
+    /**
+     * Find user by Stripe customer ID
+     */
+    protected function findUserByCustomerId(string $customerId)
+    {
+        return \App\Models\User::where('stripe_customer_id', $customerId)->first();
+    }
+
+    /**
+     * Determine plan name from subscription
+     */
+    protected function determinePlanFromSubscription($subscription): string
+    {
+        // Try metadata first (metadata is an object in Stripe)
+        if (isset($subscription->metadata) && isset($subscription->metadata->plan)) {
+            $plan = $subscription->metadata->plan;
+            if (in_array($plan, ['pro', 'growth', 'free'])) {
+                return $plan;
+            }
+        }
+
+        // Also try accessing metadata as array (for compatibility)
+        if (isset($subscription->metadata['plan'])) {
+            $plan = $subscription->metadata['plan'];
+            if (in_array($plan, ['pro', 'growth', 'free'])) {
+                return $plan;
+            }
+        }
+
+        // Try to determine from price ID
+        if (isset($subscription->items->data[0]->price->id)) {
+            $priceId = $subscription->items->data[0]->price->id;
+            
+            // Check against configured price IDs
+            $proPriceId = env('STRIPE_PRICE_PRO');
+            $growthPriceId = env('STRIPE_PRICE_GROWTH');
+            
+            if ($priceId === $proPriceId) {
+                return 'pro';
+            }
+            if ($priceId === $growthPriceId) {
+                return 'growth';
+            }
+        }
+
+        // Fallback: try to determine from amount
+        if (isset($subscription->items->data[0]->price->unit_amount)) {
+            $amount = $subscription->items->data[0]->price->unit_amount;
+            if ($amount === 4900) {
+                return 'pro';
+            }
+            if ($amount === 9900) {
+                return 'growth';
+            }
+        }
+
+        // Default to free if cannot determine
+        Log::warning('Could not determine plan from subscription, defaulting to free', [
+            'subscription_id' => $subscription->id,
+        ]);
+
+        return 'free';
     }
 }
 
