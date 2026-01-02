@@ -9,32 +9,35 @@ class PlanFeatures
     /**
      * Plan capabilities (SOURCE OF TRUTH)
      */
-    protected static array $capabilities = [
-        'free' => [
-            'athlete_search' => 'limited',
-            'athlete_filters' => false,
-            'max_active_deals' => 3,
-            'revenue_dashboard' => false,
-            'priority_placement' => false,
-            'advanced_analytics' => false,
-        ],
-        'pro' => [
-            'athlete_search' => true,
-            'athlete_filters' => true,
-            'max_active_deals' => null, // unlimited
-            'revenue_dashboard' => true,
-            'priority_placement' => false,
-            'advanced_analytics' => false,
-        ],
-        'growth' => [
-            'athlete_search' => true,
-            'athlete_filters' => true,
-            'max_active_deals' => null, // unlimited
-            'revenue_dashboard' => true,
-            'priority_placement' => true,
-            'advanced_analytics' => true,
-        ],
-    ];
+        protected static array $capabilities = [
+            'free' => [
+                'athlete_search' => 'limited',
+                'athlete_filters' => false,
+                'max_active_deals' => 3,
+                'revenue_dashboard' => false,
+                'priority_placement' => false,
+                'advanced_analytics' => false,
+                'contact_athlete' => false,
+            ],
+            'pro' => [
+                'athlete_search' => true,
+                'athlete_filters' => true,
+                'max_active_deals' => null, // unlimited
+                'revenue_dashboard' => true,
+                'priority_placement' => false,
+                'advanced_analytics' => false,
+                'contact_athlete' => true,
+            ],
+            'growth' => [
+                'athlete_search' => true,
+                'athlete_filters' => true,
+                'max_active_deals' => null, // unlimited
+                'revenue_dashboard' => true,
+                'priority_placement' => true,
+                'advanced_analytics' => true,
+                'contact_athlete' => true,
+            ],
+        ];
 
     /**
      * Check if user can use a specific feature

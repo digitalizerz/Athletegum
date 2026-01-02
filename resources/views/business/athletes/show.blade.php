@@ -54,10 +54,30 @@
                                     </div>
                                 @endif
                                 
-                                @if($athlete->email)
+                                @php
+                                    $user = Auth::user();
+                                    $canContactAthlete = \App\Support\PlanFeatures::canUseFeature($user, 'contact_athlete');
+                                @endphp
+                                
+                                @if($canContactAthlete && $athlete->email)
                                     <div>
                                         <span class="font-semibold text-gray-700">Email:</span>
                                         <span class="ml-2 text-gray-600">{{ $athlete->email }}</span>
+                                    </div>
+                                @elseif(!$canContactAthlete)
+                                    <div>
+                                        <span class="font-semibold text-gray-700">Email:</span>
+                                        <div class="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                            <p class="text-sm text-yellow-800 mb-2">
+                                                Upgrade to contact this athlete
+                                            </p>
+                                            <a 
+                                                href="{{ route('business.billing.index') }}" 
+                                                class="inline-flex items-center px-4 py-2 bg-black border border-black rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition"
+                                            >
+                                                Upgrade to Pro
+                                            </a>
+                                        </div>
                                     </div>
                                 @endif
                             </div>
