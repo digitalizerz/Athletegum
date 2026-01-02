@@ -64,25 +64,47 @@
     </head>
     <body class="font-sans antialiased" style="background-color: #ffffff; color: #000000;">
         <!-- Header -->
-        <header class="h-16" style="background-color: #000000 !important; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+        <header x-data="{ open: false }" class="h-16 relative" style="background-color: #000000 !important; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between" style="background-color: #000000 !important;">
                 <!-- Logo -->
                 <a href="{{ route('welcome') }}" style="background: transparent !important;">
                     <x-athletegum-logo size="md" text-color="white" />
                 </a>
                 
-                <!-- Navigation -->
-                <nav class="flex items-center space-x-8" style="display: flex !important; background: transparent !important;">
-                    <a href="{{ route('welcome') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important; display: inline-block;">Home</a>
-                    <a href="{{ route('pages.how-it-works') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important; display: inline-block;">How It Works</a>
-                    <a href="{{ route('pages.pricing') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important; display: inline-block;">Pricing</a>
-                    <a href="{{ route('pages.about') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important; display: inline-block;">About</a>
+                <!-- Desktop Navigation -->
+                <nav class="hidden md:flex items-center space-x-8" style="background: transparent !important;">
+                    <a href="{{ route('welcome') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important;">Home</a>
+                    <a href="{{ route('pages.how-it-works') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important;">How It Works</a>
+                    <a href="{{ route('pages.pricing') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important;">Pricing</a>
+                    <a href="{{ route('pages.about') }}" class="text-sm font-medium" style="color: #ffffff !important; text-decoration: none !important; background: transparent !important;">About</a>
                 </nav>
                 
-                <!-- Right Side Actions -->
-                <div class="flex items-center space-x-4" style="background: transparent !important;">
+                <!-- Desktop Right Side Actions -->
+                <div class="hidden md:flex items-center space-x-4" style="background: transparent !important;">
                     <a href="{{ route('login') }}" class="text-sm font-medium px-4 py-2 rounded-lg" style="color: #ffffff !important; border: 1px solid #ffffff !important; background: transparent !important; text-decoration: none !important;">Business Sign In</a>
                     <a href="{{ route('athlete.login') }}" class="text-sm font-medium px-4 py-2 rounded-lg" style="color: #ffffff !important; border: 1px solid #ffffff !important; background: transparent !important; text-decoration: none !important;">Athlete Sign In</a>
+                </div>
+                
+                <!-- Mobile Menu Button -->
+                <button @click="open = !open" class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white">
+                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                        <path :class="{'hidden': open, 'inline-flex': !open}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        <path :class="{'hidden': !open, 'inline-flex': open}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Mobile Menu -->
+            <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" class="md:hidden absolute top-16 left-0 right-0 bg-black border-b border-white/10 z-50" style="display: none;">
+                <div class="px-4 pt-2 pb-4 space-y-1">
+                    <a href="{{ route('welcome') }}" class="block px-3 py-2 text-sm font-medium rounded-md" style="color: #ffffff !important; text-decoration: none !important;">Home</a>
+                    <a href="{{ route('pages.how-it-works') }}" class="block px-3 py-2 text-sm font-medium rounded-md" style="color: #ffffff !important; text-decoration: none !important;">How It Works</a>
+                    <a href="{{ route('pages.pricing') }}" class="block px-3 py-2 text-sm font-medium rounded-md" style="color: #ffffff !important; text-decoration: none !important;">Pricing</a>
+                    <a href="{{ route('pages.about') }}" class="block px-3 py-2 text-sm font-medium rounded-md" style="color: #ffffff !important; text-decoration: none !important;">About</a>
+                    <div class="pt-4 space-y-2 border-t border-white/10">
+                        <a href="{{ route('login') }}" class="block px-3 py-2 text-sm font-medium rounded-md text-center border border-white" style="color: #ffffff !important; text-decoration: none !important;">Business Sign In</a>
+                        <a href="{{ route('athlete.login') }}" class="block px-3 py-2 text-sm font-medium rounded-md text-center border border-white" style="color: #ffffff !important; text-decoration: none !important;">Athlete Sign In</a>
+                    </div>
                 </div>
             </div>
         </header>
