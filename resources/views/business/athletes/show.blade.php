@@ -93,10 +93,19 @@
                             <div class="mt-6">
                                 @php
                                     $user = Auth::user();
-                                    $canStartDeal = \App\Support\PlanFeatures::maxActiveDeals($user) === null; // Unlimited deals = Pro/Growth
+                                    $maxDeals = \App\Support\PlanFeatures::maxActiveDeals($user);
+                                    
+                                    // Check if user has reached deal limit (only for Free users)
+                                    $hasReachedLimit = false;
+                                    if ($maxDeals !== null) {
+                                        $activeDealsCount = \App\Models\Deal::where('user_id', $user->id)
+                                            ->whereIn('status', ['pending', 'accepted', 'active'])
+                                            ->count();
+                                        $hasReachedLimit = $activeDealsCount >= $maxDeals;
+                                    }
                                 @endphp
                                 
-                                @if($canStartDeal)
+                                @if(!$hasReachedLimit)
                                     <a 
                                         href="{{ route('deals.create', ['athlete_id' => $athlete->id]) }}" 
                                         class="inline-flex items-center px-6 py-3 bg-black border border-black rounded-md font-semibold text-sm text-white uppercase tracking-widest hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition"
@@ -106,15 +115,22 @@
                                 @else
                                     <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                                         <p class="text-sm text-yellow-800 mb-3">
-                                            <strong>Deal creation requires Pro or Growth.</strong>
+                                            <strong>You've reached the Free plan limit of {{ $maxDeals }} active deals.</strong>
                                         </p>
-                                        <a 
-                                            href="{{ route('business.billing.index') }}" 
+                                        <button 
+                                            onclick="document.getElementById('upgrade-modal-deal').showModal()"
                                             class="inline-flex items-center px-4 py-2 bg-black border border-black rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition"
                                         >
-                                            Upgrade
-                                        </a>
+                                            Upgrade to Pro
+                                        </button>
                                     </div>
+                                    
+                                    <x-upgrade-modal 
+                                        modalId="upgrade-modal-deal"
+                                        title="🔓 Create Unlimited Deals with Pro"
+                                        description="You've reached your Free plan limit. Upgrade to create unlimited deals and work with athletes."
+                                        actionText="Upgrade to Pro"
+                                    />
                                 @endif
                             </div>
                         </div>

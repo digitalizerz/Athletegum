@@ -111,8 +111,9 @@ class BillingController extends Controller
         $subscriptionData['end_date'] = $subscriptionEndDate;
 
         // Calculate usage metrics for upgrade nudges
+        // Count active deals only (pending, accepted, active)
         $activeDealsCount = \App\Models\Deal::where('user_id', $user->id)
-            ->whereIn('status', ['pending', 'active', 'revisions_requested', 'submitted'])
+            ->whereIn('status', ['pending', 'accepted', 'active'])
             ->count();
         
         $maxActiveDeals = \App\Support\PlanFeatures::maxActiveDeals($user);

@@ -47,16 +47,23 @@ class DealController extends Controller
     {
         $user = Auth::user();
         
-        // Gate deal creation - Free users cannot create deals (they hit the limit)
-        $maxDeals = PlanFeatures::maxActiveDeals($user);
-        if ($maxDeals !== null) {
-            // Free user - redirect to billing
-            return redirect()->route('business.billing.index')
-                ->with('error', 'Upgrade to Pro to start deals with athletes.');
-        }
-        
         // Check if business info is complete
         $hasCompleteInfo = $this->hasCompleteBusinessInfo($user);
+        
+        // Gate deal creation - Check active deals limit for Free users
+        $maxDeals = PlanFeatures::maxActiveDeals($user);
+        if ($maxDeals !== null) {
+            // Free user - count active deals (pending, accepted, active)
+            $activeDealsCount = Deal::where('user_id', $user->id)
+                ->whereIn('status', ['pending', 'accepted', 'active'])
+                ->count();
+            
+            // Block only when active deals >= limit (3 for Free)
+            if ($activeDealsCount >= $maxDeals) {
+                return redirect()->route('business.billing.index')
+                    ->with('error', 'You\'ve reached the Free plan limit of ' . $maxDeals . ' active deals. Upgrade to create unlimited deals.');
+            }
+        }
         
         // Get preselected athlete if provided
         $athleteId = $request->get('athlete_id');
@@ -435,16 +442,15 @@ class DealController extends Controller
         // Check deal limit for free users
         $maxDeals = PlanFeatures::maxActiveDeals($user);
         if ($maxDeals !== null) {
-            // Count active deals (exclude drafts and completed)
+            // Count active deals only (pending, accepted, active)
             $activeDealsCount = Deal::where('user_id', $user->id)
-                ->where('status', '!=', 'draft')
-                ->where('status', '!=', 'completed')
-                ->where('status', '!=', 'cancelled')
+                ->whereIn('status', ['pending', 'accepted', 'active'])
                 ->count();
             
+            // Block only when active deals >= limit (3 for Free)
             if ($activeDealsCount >= $maxDeals) {
                 return redirect()->route('business.billing.index')
-                    ->with('error', 'Free plan allows up to ' . $maxDeals . ' active deals. Upgrade to continue.');
+                    ->with('error', "You've reached the Free plan limit of {$maxDeals} active deals. Upgrade to create unlimited deals.");
             }
         }
         
