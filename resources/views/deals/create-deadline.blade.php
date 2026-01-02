@@ -23,14 +23,21 @@
                                 id="athlete_email"
                                 type="email"
                                 name="athlete_email"
-                                value="{{ old('athlete_email') }}"
-                                class="input input-bordered w-full"
+                                value="{{ old('athlete_email', $preselectedAthleteEmail ?? '') }}"
+                                class="input input-bordered w-full {{ isset($preselectedAthleteEmail) ? 'bg-gray-50' : '' }}"
                                 placeholder="athlete@example.com"
-                                required
+                                {{ isset($preselectedAthleteEmail) ? 'readonly' : '' }}
+                                {{ !isset($preselectedAthleteEmail) ? 'required' : '' }}
                             />
-                            <p class="mt-1.5 text-xs text-base-content/60">
-                                This deal invitation will be sent specifically to this athlete. Only they can accept it.
-                            </p>
+                            @if(isset($preselectedAthleteEmail))
+                                <p class="mt-1.5 text-xs text-blue-600">
+                                    Athlete preselected from profile.
+                                </p>
+                            @else
+                                <p class="mt-1.5 text-xs text-base-content/60">
+                                    This deal invitation will be sent specifically to this athlete. Only they can accept it.
+                                </p>
+                            @endif
                             <x-input-error :messages="$errors->get('athlete_email')" class="mt-1" />
                         </div>
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Deal;
+use App\Support\PlanFeatures;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -42,16 +43,38 @@ class DealController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         $user = Auth::user();
+        
+        // Gate deal creation - Free users cannot create deals (they hit the limit)
+        $maxDeals = PlanFeatures::maxActiveDeals($user);
+        if ($maxDeals !== null) {
+            // Free user - redirect to billing
+            return redirect()->route('business.billing.index')
+                ->with('error', 'Upgrade to Pro to start deals with athletes.');
+        }
         
         // Check if business info is complete
         $hasCompleteInfo = $this->hasCompleteBusinessInfo($user);
         
+        // Get preselected athlete if provided
+        $athleteId = $request->get('athlete_id');
+        $athlete = null;
+        if ($athleteId) {
+            $athlete = \App\Models\Athlete::find($athleteId);
+        }
+        
+        // Store athlete_id in session if provided (will be used in deadline step)
+        if ($athlete) {
+            $request->session()->put('preselected_athlete_id', $athlete->id);
+            $request->session()->put('preselected_athlete_email', $athlete->email);
+        }
+        
         return view('deals.create-type', [
             'dealTypes' => Deal::getDealTypes(),
             'hasCompleteBusinessInfo' => $hasCompleteInfo,
+            'athlete' => $athlete,
         ]);
     }
 
@@ -178,19 +201,49 @@ class DealController extends Controller
             return redirect()->route('deals.create');
         }
 
-        return view('deals.create-deadline');
+        // Get preselected athlete email if available
+        $preselectedAthleteEmail = session()->get('preselected_athlete_email');
+        
+        return view('deals.create-deadline', [
+            'preselectedAthleteEmail' => $preselectedAthleteEmail,
+        ]);
     }
 
     public function storeDeadline(Request $request)
     {
-        $validated = $request->validate([
-            'athlete_email' => ['required', 'email', 'max:255'],
+        // Check if athlete is preselected from session
+        $preselectedAthleteId = $request->session()->get('preselected_athlete_id');
+        $athleteEmail = null;
+
+        if ($preselectedAthleteId) {
+            // Athlete is preselected - resolve email from athlete record
+            $athlete = \App\Models\Athlete::find($preselectedAthleteId);
+            if ($athlete) {
+                $athleteEmail = strtolower(trim($athlete->email));
+            }
+        }
+
+        // Validation rules: athlete_email only required if no preselected athlete
+        $rules = [
             'deadline' => ['required', 'date', 'after:today'],
             'deadline_time' => ['nullable', 'date_format:H:i'],
             'frequency' => ['nullable', 'in:one-time,daily,weekly,bi-weekly,monthly'],
-        ]);
+        ];
 
-        $request->session()->put('athlete_email', strtolower(trim($validated['athlete_email'])));
+        if (!$preselectedAthleteId) {
+            // Only require athlete_email if no preselected athlete
+            $rules['athlete_email'] = ['required', 'email', 'max:255'];
+        }
+
+        $validated = $request->validate($rules);
+
+        // Use preselected email if available, otherwise use form input
+        if ($preselectedAthleteId && $athleteEmail) {
+            $request->session()->put('athlete_email', $athleteEmail);
+        } else {
+            $request->session()->put('athlete_email', strtolower(trim($validated['athlete_email'])));
+        }
+
         $request->session()->put('deadline', $validated['deadline']);
         $request->session()->put('deadline_time', $validated['deadline_time'] ?? null);
         $request->session()->put('frequency', $validated['frequency'] ?? 'one-time');
@@ -377,6 +430,24 @@ class DealController extends Controller
 
     public function store(Request $request)
     {
+        $user = Auth::user();
+        
+        // Check deal limit for free users
+        $maxDeals = PlanFeatures::maxActiveDeals($user);
+        if ($maxDeals !== null) {
+            // Count active deals (exclude drafts and completed)
+            $activeDealsCount = Deal::where('user_id', $user->id)
+                ->where('status', '!=', 'draft')
+                ->where('status', '!=', 'completed')
+                ->where('status', '!=', 'cancelled')
+                ->count();
+            
+            if ($activeDealsCount >= $maxDeals) {
+                return redirect()->route('business.billing.index')
+                    ->with('error', 'Free plan allows up to ' . $maxDeals . ' active deals. Upgrade to continue.');
+            }
+        }
+        
         $session = $request->session();
         
         // Validate that all required session data exists

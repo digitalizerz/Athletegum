@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Business;
 use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\Payout;
+use App\Support\PlanFeatures;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
@@ -44,6 +45,13 @@ class RevenueController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
+        
+        // Gate revenue dashboard access
+        if (!PlanFeatures::canUseFeature($user, 'revenue_dashboard')) {
+            return redirect()->route('business.billing.index')
+                ->with('error', 'Revenue dashboard is only available on Pro and Growth plans. Upgrade to unlock this feature.');
+        }
+        
         $filter = $request->get('filter', 'all');
         $dateRange = $this->getDateRange($filter);
 
@@ -89,6 +97,13 @@ class RevenueController extends Controller
     public function deals(Request $request)
     {
         $user = Auth::user();
+        
+        // Gate revenue dashboard access
+        if (!PlanFeatures::canUseFeature($user, 'revenue_dashboard')) {
+            return redirect()->route('business.billing.index')
+                ->with('error', 'Revenue dashboard is only available on Pro and Growth plans. Upgrade to unlock this feature.');
+        }
+        
         $filter = $request->get('filter', 'all');
         $dateRange = $this->getDateRange($filter);
         $export = $request->get('export') === 'csv';
@@ -186,6 +201,13 @@ class RevenueController extends Controller
     public function athletes(Request $request)
     {
         $user = Auth::user();
+        
+        // Gate revenue dashboard access
+        if (!PlanFeatures::canUseFeature($user, 'revenue_dashboard')) {
+            return redirect()->route('business.billing.index')
+                ->with('error', 'Revenue dashboard is only available on Pro and Growth plans. Upgrade to unlock this feature.');
+        }
+        
         $filter = $request->get('filter', 'all');
         $dateRange = $this->getDateRange($filter);
         $export = $request->get('export') === 'csv';

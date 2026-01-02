@@ -78,6 +78,12 @@ Route::middleware('auth')->group(function () {
             Route::get('/athletes', [\App\Http\Controllers\Business\RevenueController::class, 'athletes'])->name('athletes');
         });
 
+        // Business Athletes Browse
+        Route::prefix('business/athletes')->name('business.athletes.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Business\AthleteController::class, 'index'])->name('index');
+            Route::get('/{athlete}', [\App\Http\Controllers\Business\AthleteController::class, 'show'])->name('show');
+        });
+
         // Business Billing
         Route::prefix('business/billing')->name('business.billing.')->group(function () {
             Route::get('/', [\App\Http\Controllers\Business\BillingController::class, 'index'])->name('index');
