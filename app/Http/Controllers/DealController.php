@@ -68,14 +68,24 @@ class DealController extends Controller
         // Get preselected athlete if provided
         $athleteId = $request->get('athlete_id');
         $athlete = null;
-        if ($athleteId) {
-            $athlete = \App\Models\Athlete::find($athleteId);
-        }
         
-        // Store athlete_id in session if provided (will be used in deadline step)
-        if ($athlete) {
-            $request->session()->put('preselected_athlete_id', $athlete->id);
-            $request->session()->put('preselected_athlete_email', $athlete->email);
+        // CRITICAL: Clear preselected athlete data if starting a new deal without athlete_id
+        // This prevents old session data from persisting to new deals
+        if (!$athleteId) {
+            $request->session()->forget('preselected_athlete_id');
+            $request->session()->forget('preselected_athlete_email');
+        } else {
+            $athlete = \App\Models\Athlete::find($athleteId);
+            
+            // Store athlete_id in session if provided (will be used in deadline step)
+            if ($athlete) {
+                $request->session()->put('preselected_athlete_id', $athlete->id);
+                $request->session()->put('preselected_athlete_email', $athlete->email);
+            } else {
+                // Athlete ID provided but not found - clear session data
+                $request->session()->forget('preselected_athlete_id');
+                $request->session()->forget('preselected_athlete_email');
+            }
         }
         
         return view('deals.create-type', [
@@ -208,11 +218,14 @@ class DealController extends Controller
             return redirect()->route('deals.create');
         }
 
-        // Get preselected athlete email if available
+        // Get preselected athlete info if available
+        $preselectedAthleteId = session()->get('preselected_athlete_id');
         $preselectedAthleteEmail = session()->get('preselected_athlete_email');
+        $hasPreselectedAthlete = !empty($preselectedAthleteId) && !empty($preselectedAthleteEmail);
         
         return view('deals.create-deadline', [
             'preselectedAthleteEmail' => $preselectedAthleteEmail,
+            'hasPreselectedAthlete' => $hasPreselectedAthlete,
         ]);
     }
 
@@ -518,11 +531,34 @@ class DealController extends Controller
             ]);
         }
 
-        // Validate payment was processed
-        // For wallet payments, status must be 'paid'
-        // For Stripe payments, status can be 'pending' (webhook will confirm)
-        if (!$paymentIntentId) {
-            return redirect()->route('deals.create.payment')->withErrors(['error' => 'Payment must be processed before creating the deal.']);
+        // Validate payment method selection exists
+        if (!$paymentMethod) {
+            return redirect()->route('deals.create.payment')->withErrors(['error' => 'Please select a payment method.']);
+        }
+
+        // CRITICAL: Charge payment NOW (this is the ONLY place payment should be charged)
+        // Payment happens BEFORE deal creation to ensure funds are secured
+        try {
+            $paymentController = app(\App\Http\Controllers\PaymentController::class);
+            $paymentResult = $paymentController->chargeDealPayment($session, $user);
+            
+            $paymentIntentId = $paymentResult['payment_intent_id'];
+            $chargeId = $paymentResult['stripe_charge_id'];
+            $paymentStatus = $paymentResult['payment_status'];
+            
+            // Update session with payment results
+            $session->put('payment_intent_id', $paymentIntentId);
+            $session->put('stripe_charge_id', $chargeId);
+            $session->put('payment_status', $paymentStatus);
+            
+        } catch (\Exception $e) {
+            \Log::error('Payment charging failed in DealController::store()', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+            ]);
+            return redirect()->route('deals.review')->withErrors([
+                'error' => 'Payment failed: ' . $e->getMessage() . ' Please try again or contact support.'
+            ]);
         }
 
         // For Stripe payments, verify the PaymentIntent exists and is valid
@@ -533,7 +569,7 @@ class DealController extends Controller
                 
                 // Only allow if payment succeeded or is processing
                 if (!in_array($paymentIntent->status, ['succeeded', 'processing'])) {
-                    return redirect()->route('deals.create.payment')->withErrors([
+                    return redirect()->route('deals.review')->withErrors([
                         'error' => 'Payment is not confirmed. Please try again.'
                     ]);
                 }
@@ -541,17 +577,14 @@ class DealController extends Controller
                 // Update payment status from Stripe
                 $paymentStatus = $paymentIntent->status === 'succeeded' ? 'paid' : 'pending';
             } catch (\Exception $e) {
-                \Log::error('Failed to verify Stripe PaymentIntent', [
+                \Log::error('Failed to verify Stripe PaymentIntent after charging', [
                     'payment_intent_id' => $paymentIntentId,
                     'error' => $e->getMessage(),
                 ]);
-                return redirect()->route('deals.create.payment')->withErrors([
+                return redirect()->route('deals.review')->withErrors([
                     'error' => 'Payment verification failed. Please contact support.'
                 ]);
             }
-        } elseif ($paymentStatus !== 'paid') {
-            // Wallet payments must be 'paid'
-            return redirect()->route('deals.create.payment')->withErrors(['error' => 'Payment must be processed before creating the deal.']);
         }
 
         // Get athlete email from session (if provided during deal creation)
@@ -567,83 +600,106 @@ class DealController extends Controller
                 ->first();
         }
 
-        if ($existingDraft) {
-            // Update existing draft to final deal
-            $existingDraft->update([
-                'payment_method_id' => $cardPaymentMethodId,
-                'status' => 'pending',
-                'payment_status' => $paymentStatus,
-                'payment_intent_id' => $paymentIntentId,
-                'paid_at' => $paymentStatus === 'paid' ? now() : null,
-            ]);
-            $deal = $existingDraft;
-        } else {
-            // Create new deal
-            $deal = Deal::create([
-                'user_id' => Auth::id(),
-                'payment_method_id' => $cardPaymentMethodId, // Store card payment method if used
-                'deal_type' => $dealType,
-                'platforms' => $platforms,
-                'compensation_amount' => $compensationAmount,
-                'platform_fee_percentage' => $platformFeePercentage,
-                'platform_fee_amount' => $platformFeeAmount,
-                'escrow_amount' => $escrowAmount,
-                'total_amount' => $totalAmount,
-                'athlete_fee_percentage' => $athleteFeePercentage,
-                'athlete_fee_amount' => $athleteFeeAmount,
-                'athlete_net_payout' => $athleteNetPayout,
-                'deadline' => $deadline,
-                'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
-                'frequency' => $frequency,
-                'notes' => $notes ?? null,
-                'attachments' => !empty($attachments) ? $attachments : null,
-                'contract_text' => $contractText,
-                'contract_signed' => $contractSigned,
-                'contract_signed_at' => $contractSigned ? now() : null,
-                'status' => 'pending',
-                'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus, // Mark as paid_escrowed when payment succeeds
-                'payment_intent_id' => $paymentIntentId,
-                'stripe_charge_id' => $session->get('stripe_charge_id'), // Store charge ID for reference
-                'paid_at' => $paymentStatus === 'paid' ? now() : null,
-            ]);
+        // Create deal AFTER payment has been successfully charged
+        // Payment has already been processed above, so we can safely create the deal
+        try {
+            DB::beginTransaction();
 
-            // Create deal invitation (required for identity guardrails)
-            // For now, if no email provided, we'll create invitation without email (backward compatibility)
-            // In production, athlete_email should be required
-            $athlete = null;
-            if ($athleteEmail) {
-                // Check if athlete already exists
-                $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
+            if ($existingDraft) {
+                // Update existing draft to final deal
+                $existingDraft->update([
+                    'payment_method_id' => $cardPaymentMethodId,
+                    'status' => 'pending',
+                    'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus, // Mark as paid_escrowed when payment succeeds
+                    'payment_intent_id' => $paymentIntentId,
+                    'stripe_charge_id' => $chargeId ?? $session->get('stripe_charge_id'), // Store charge ID for reference
+                    'paid_at' => $paymentStatus === 'paid' ? now() : null,
+                ]);
+                $deal = $existingDraft;
+            } else {
+                // Create new deal
+                $deal = Deal::create([
+                    'user_id' => Auth::id(),
+                    'payment_method_id' => $cardPaymentMethodId, // Store card payment method if used
+                    'deal_type' => $dealType,
+                    'platforms' => $platforms,
+                    'compensation_amount' => $compensationAmount,
+                    'platform_fee_percentage' => $platformFeePercentage,
+                    'platform_fee_amount' => $platformFeeAmount,
+                    'escrow_amount' => $escrowAmount,
+                    'total_amount' => $totalAmount,
+                    'athlete_fee_percentage' => $athleteFeePercentage,
+                    'athlete_fee_amount' => $athleteFeeAmount,
+                    'athlete_net_payout' => $athleteNetPayout,
+                    'deadline' => $deadline,
+                    'deadline_time' => $deadlineTime ? ($deadlineTime . ':00') : null,
+                    'frequency' => $frequency,
+                    'notes' => $notes ?? null,
+                    'attachments' => !empty($attachments) ? $attachments : null,
+                    'contract_text' => $contractText,
+                    'contract_signed' => $contractSigned,
+                    'contract_signed_at' => $contractSigned ? now() : null,
+                    'status' => 'pending',
+                    'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus, // Mark as paid_escrowed when payment succeeds
+                    'payment_intent_id' => $paymentIntentId,
+                    'stripe_charge_id' => $chargeId ?? $session->get('stripe_charge_id'), // Store charge ID for reference
+                    'paid_at' => $paymentStatus === 'paid' ? now() : null,
+                ]);
             }
 
-            $invitation = \App\Models\DealInvitation::create([
-                'deal_id' => $deal->id,
-                'athlete_email' => $athleteEmail,
-                'athlete_id' => $athlete?->id,
-                'status' => 'pending',
-            ]);
+                // Create deal invitation (required for identity guardrails)
+                // For now, if no email provided, we'll create invitation without email (backward compatibility)
+                // In production, athlete_email should be required
+                $athlete = null;
+                if ($athleteEmail) {
+                    // Check if athlete already exists
+                    $athlete = \App\Models\Athlete::where('email', $athleteEmail)->first();
+                }
 
-            // Send email to athlete if email is provided
-            if ($athleteEmail) {
-                try {
-                    $athleteName = $athlete?->name ?? explode('@', $athleteEmail)[0];
-                    \Illuminate\Support\Facades\Mail::to($athleteEmail)->send(
-                        new \App\Mail\NewDealCreatedMail($athleteName, $deal)
-                    );
-                    \Log::info('Deal creation email sent', [
-                        'deal_id' => $deal->id,
-                        'athlete_email' => $athleteEmail,
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::error('Failed to send deal creation email', [
-                        'deal_id' => $deal->id,
-                        'athlete_email' => $athleteEmail,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
+                $invitation = \App\Models\DealInvitation::create([
+                    'deal_id' => $deal->id,
+                    'athlete_email' => $athleteEmail,
+                    'athlete_id' => $athlete?->id,
+                    'status' => 'pending',
+                ]);
+
+                DB::commit();
+
+                // Send email to athlete if email is provided (outside transaction)
+                if ($athleteEmail) {
+                    try {
+                        $athleteName = $athlete?->name ?? explode('@', $athleteEmail)[0];
+                        \Illuminate\Support\Facades\Mail::to($athleteEmail)->send(
+                            new \App\Mail\NewDealCreatedMail($athleteName, $deal)
+                        );
+                        \Log::info('Deal creation email sent', [
+                            'deal_id' => $deal->id,
+                            'athlete_email' => $athleteEmail,
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to send deal creation email', [
+                            'deal_id' => $deal->id,
+                            'athlete_email' => $athleteEmail,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
                     ]);
                     // Don't fail the deal creation if email fails
                 }
             }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Failed to create deal after payment', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+                'payment_intent_id' => $paymentIntentId,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Payment has already been charged, so we need to handle this carefully
+            // In production, you might want to create a support ticket or refund
+            return redirect()->route('deals.review')->withErrors([
+                'error' => 'Payment was successful, but deal creation failed. Please contact support with payment ID: ' . ($paymentIntentId ?? 'N/A')
+            ]);
         }
 
         // Create wallet transaction for the deal payment (if wallet was used)
@@ -923,10 +979,10 @@ class DealController extends Controller
             abort(403);
         }
 
-        // Prevent editing completed or cancelled deals
-        if (in_array($deal->status, ['completed', 'cancelled']) || $deal->released_at) {
+        // Prevent editing completed or cancelled deals, or deals that have been approved/released
+        if (in_array($deal->status, ['completed', 'cancelled']) || $deal->released_at || $deal->is_approved) {
             return redirect()->route('deals.index')
-                ->withErrors(['error' => 'Cannot edit a deal that is completed or cancelled.']);
+                ->withErrors(['error' => 'Cannot edit a deal that is completed, cancelled, or has been approved.']);
         }
 
         $dealTypes = Deal::getDealTypes();
@@ -945,10 +1001,10 @@ class DealController extends Controller
             abort(403);
         }
 
-        // Prevent editing completed or cancelled deals
-        if (in_array($deal->status, ['completed', 'cancelled']) || $deal->released_at) {
+        // Prevent editing completed or cancelled deals, or deals that have been approved/released
+        if (in_array($deal->status, ['completed', 'cancelled']) || $deal->released_at || $deal->is_approved) {
             return redirect()->route('deals.index')
-                ->withErrors(['error' => 'Cannot edit a deal that is completed or cancelled.']);
+                ->withErrors(['error' => 'Cannot edit a deal that is completed, cancelled, or has been approved.']);
         }
 
         $dealTypes = Deal::getDealTypes();

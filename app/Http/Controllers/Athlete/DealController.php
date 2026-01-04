@@ -240,6 +240,9 @@ class DealController extends Controller
             abort(403);
         }
 
+        // Refresh deal from database to ensure we have latest state (important for payment release status)
+        $deal->refresh();
+
         // Eager load messages to check for revision requests
         $deal->load('messages');
 

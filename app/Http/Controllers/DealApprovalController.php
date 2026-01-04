@@ -29,8 +29,9 @@ class DealApprovalController extends Controller
             return redirect()->back()->withErrors(['error' => 'Deal must be completed by athlete before it can be approved.']);
         }
 
-        if ($deal->released_at) {
-            return redirect()->back()->withErrors(['error' => 'Payment has already been released.']);
+        // Cannot approve if payment has already been released (payment release = automatic approval)
+        if ($deal->released_at || $deal->is_approved) {
+            return redirect()->back()->withErrors(['error' => 'Deal has already been approved and payment released.']);
         }
 
         $validated = $request->validate([
@@ -76,9 +77,9 @@ class DealApprovalController extends Controller
         }
 
         // Can only request revisions if deal is completed (athlete submitted) or approved
-        // Cannot request revisions if payment already released
-        if ($deal->released_at) {
-            return redirect()->back()->withErrors(['error' => 'Cannot request revisions for a deal that has already been paid.']);
+        // Cannot request revisions if payment already released OR approved (payment release = final approval)
+        if ($deal->released_at || $deal->is_approved) {
+            return redirect()->back()->withErrors(['error' => 'Cannot request revisions for a deal that has already been approved and paid.']);
         }
 
         // Cannot request revisions if payment is pending clearance

@@ -22,7 +22,8 @@ class PaymentController extends Controller
         $this->stripeService = $stripeService;
     }
     /**
-     * Process payment for a deal (wallet, card, or split payment)
+     * Store payment method selection for a deal (Step 5 - NO PAYMENT CHARGED)
+     * Payment is only charged when user clicks "Pay & Create Deal" in Step 6
      */
     public function processDealPayment(Request $request)
     {
@@ -53,22 +54,102 @@ class PaymentController extends Controller
         // Escrow amount is the base deal amount (athlete will receive: deal_amount - platform_fee)
         $escrowAmount = round($dealAmount, 2);
 
+        // Validate payment method selection (but DO NOT charge yet)
+        if ($validated['payment_method'] === 'wallet_full') {
+            // Validate wallet has sufficient balance
+            if ($walletBalance < $businessTotal) {
+                return redirect()->back()->withErrors([
+                    'error' => 'Insufficient wallet balance. Your balance is $' . number_format($walletBalance, 2) . '.'
+                ]);
+            }
+        } elseif ($validated['payment_method'] === 'wallet_partial') {
+            // Validate wallet has balance and payment method is valid
+            if ($walletBalance <= 0) {
+                return redirect()->back()->withErrors([
+                    'error' => 'You selected to use wallet, but your wallet balance is $0.00. Please select a different payment method.'
+                ]);
+            }
+
+            // Verify payment method belongs to user
+            $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
+            if ($paymentMethod->user_id !== $user->id) {
+                return redirect()->back()->withErrors(['error' => 'Invalid payment method.']);
+            }
+        } else { // card_full
+            // Verify payment method belongs to user
+            $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
+            if ($paymentMethod->user_id !== $user->id) {
+                return redirect()->back()->withErrors(['error' => 'Invalid payment method.']);
+            }
+        }
+
+        // Calculate amounts (but DO NOT charge)
+        $walletAmountUsed = 0;
+        $cardAmount = 0;
+
+        if ($validated['payment_method'] === 'wallet_full') {
+            $walletAmountUsed = $businessTotal;
+        } elseif ($validated['payment_method'] === 'wallet_partial') {
+            $walletAmountUsed = min($walletBalance, $businessTotal);
+            $cardAmount = $businessTotal - $walletAmountUsed;
+        } else { // card_full
+            $cardAmount = $businessTotal;
+        }
+
+        // Store payment method selection in session (NO PAYMENT CHARGED)
+        $session->put('platform_fee_type', 'percentage');
+        $session->put('platform_fee_percentage', $platformFeePercentage);
+        $session->put('platform_fee_amount', $platformFeeAmount);
+        $session->put('escrow_amount', $escrowAmount);
+        $session->put('compensation_amount', $dealAmount); // Store original deal amount
+        $session->put('total_amount', $businessTotal); // Business total (deal_amount only)
+        $session->put('wallet_amount_used', $walletAmountUsed);
+        $session->put('card_amount', $cardAmount);
+        $session->put('payment_method', $validated['payment_method'] === 'wallet_full' ? 'wallet' : ($validated['payment_method'] === 'wallet_partial' ? 'wallet_card' : 'card'));
+        
+        // Store payment method ID if card is involved
+        if ($validated['payment_method'] !== 'wallet_full') {
+            $session->put('card_payment_method_id', $validated['payment_method_id']);
+        }
+
+        // DO NOT store payment_intent_id or payment_status yet
+        // These will be set when payment is actually charged in DealController::store()
+
+        return redirect()->route('deals.review');
+    }
+
+    /**
+     * Actually charge payment for a deal (called from DealController::store() when "Pay & Create Deal" is clicked)
+     * This is the ONLY place where payment should be charged
+     */
+    public function chargeDealPayment($session, $user)
+    {
+        $paymentMethod = $session->get('payment_method'); // wallet, wallet_card, or card
+        $cardPaymentMethodId = $session->get('card_payment_method_id');
+        $walletAmountUsed = (float) $session->get('wallet_amount_used', 0);
+        $cardAmount = (float) $session->get('card_amount', 0);
+        $dealAmount = (float) $session->get('compensation_amount');
+        $platformFeePercentage = (float) $session->get('platform_fee_percentage', 10.0);
+        $platformFeeAmount = (float) $session->get('platform_fee_amount');
+        $escrowAmount = (float) $session->get('escrow_amount');
+        $businessTotal = (float) $session->get('total_amount');
+        $walletBalance = (float) $user->wallet_balance ?? 0.00;
+
+        $paymentIntentId = null;
+        $chargeId = null;
+        $paymentStatus = 'pending';
+
         try {
             DB::beginTransaction();
 
-            $walletAmountUsed = 0;
-            $cardAmount = 0;
-            $paymentIntentId = null;
-
-            if ($validated['payment_method'] === 'wallet_full') {
+            if ($paymentMethod === 'wallet') {
                 // Pay fully from wallet
                 if ($walletBalance < $businessTotal) {
-                    return redirect()->back()->withErrors([
-                        'error' => 'Insufficient wallet balance. Your balance is $' . number_format($walletBalance, 2) . '.'
-                    ]);
+                    DB::rollBack();
+                    throw new \Exception('Insufficient wallet balance. Your balance is $' . number_format($walletBalance, 2) . '.');
                 }
 
-                $walletAmountUsed = $businessTotal;
+                // Deduct from wallet
                 $user->deductFromWallet($businessTotal, 'payment', null, [
                     'platform_fee_type' => 'percentage',
                     'platform_fee_percentage' => $platformFeePercentage,
@@ -79,28 +160,17 @@ class PaymentController extends Controller
                 ]);
 
                 $paymentIntentId = 'wallet_' . uniqid();
-                $session->put('payment_method', 'wallet');
+                $paymentStatus = 'paid';
 
-            } elseif ($validated['payment_method'] === 'wallet_partial') {
+            } elseif ($paymentMethod === 'wallet_card') {
                 // Use wallet + pay remainder via card
                 if ($walletBalance <= 0) {
-                    return redirect()->back()->withErrors([
-                        'error' => 'You selected to use wallet, but your wallet balance is $0.00. Please select a different payment method.'
-                    ]);
+                    DB::rollBack();
+                    throw new \Exception('You selected to use wallet, but your wallet balance is $0.00.');
                 }
 
-                $walletAmountUsed = min($walletBalance, $businessTotal);
-                $cardAmount = $businessTotal - $walletAmountUsed;
-
-                // Verify payment method belongs to user
-                $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
-                if ($paymentMethod->user_id !== $user->id) {
-                    return redirect()->back()->withErrors(['error' => 'Invalid payment method.']);
-                }
-
-                // Deduct wallet portion
+                // Deduct wallet portion first
                 if ($walletAmountUsed > 0) {
-                    // Calculate proportional platform fee for wallet portion
                     $walletPlatformFeeAmount = round(($walletAmountUsed / $businessTotal) * $platformFeeAmount, 2);
                     $user->deductFromWallet($walletAmountUsed, 'payment', null, [
                         'platform_fee_type' => 'percentage',
@@ -113,199 +183,141 @@ class PaymentController extends Controller
                     ]);
                 }
 
-                // Process card payment for remainder via REAL Stripe
+                // Process card payment for remainder via Stripe
                 if (!$this->stripeService->isConfigured()) {
                     DB::rollBack();
-                    return redirect()->back()->withErrors([
-                        'error' => 'Stripe is not configured. Please contact support.'
-                    ]);
+                    throw new \Exception('Stripe is not configured. Please contact support.');
                 }
 
-                // Create or get Stripe customer
+                $paymentMethodModel = PaymentMethod::findOrFail($cardPaymentMethodId);
+                if ($paymentMethodModel->user_id !== $user->id) {
+                    DB::rollBack();
+                    throw new \Exception('Invalid payment method.');
+                }
+
                 $customerId = $this->stripeService->getOrCreateCustomer(
                     $user->id,
                     $user->email,
                     $user->name
                 );
 
-                // Calculate platform fee proportion for card portion
                 $cardPlatformFeeAmount = round(($cardAmount / $businessTotal) * $platformFeeAmount, 2);
 
-                try {
-                    $paymentIntent = $this->stripeService->createPaymentIntent(
-                        $cardAmount,
-                        $paymentMethod->provider_payment_method_id,
-                        $cardPlatformFeeAmount, // Platform fee for card portion (for metadata tracking only)
-                        [
-                            'user_id' => $user->id,
-                            'deal_type' => $session->get('deal_type'),
-                            'compensation_amount' => (string) $dealAmount,
-                            'platform_fee_amount' => (string) $cardPlatformFeeAmount,
-                            'escrow_amount' => (string) $escrowAmount,
-                            'payment_type' => 'partial_wallet',
-                            'wallet_amount_used' => (string) $walletAmountUsed,
-                            'business_total' => (string) $businessTotal,
-                        ],
-                        $customerId // Include customer ID
-                    );
-
-                    if ($paymentIntent->status !== 'succeeded') {
-                        DB::rollBack();
-                        return redirect()->back()->withErrors([
-                            'error' => 'Card payment failed. Status: ' . $paymentIntent->status
-                        ]);
-                    }
-
-                    $paymentIntentId = $paymentIntent->id;
-                    $session->put('payment_method', 'wallet_card');
-                    $session->put('card_payment_method_id', $paymentMethod->id);
-                    $session->put('card_amount', $cardAmount);
-                    $session->put('wallet_amount_used', $walletAmountUsed);
-                    $session->put('stripe_charge_id', $paymentIntent->charges->data[0]->id ?? null);
-
-                    Log::info('Stripe PaymentIntent succeeded (partial wallet)', [
-                        'payment_intent_id' => $paymentIntentId,
-                        'card_amount' => $cardAmount,
-                        'wallet_amount' => $walletAmountUsed,
+                $paymentIntent = $this->stripeService->createPaymentIntent(
+                    $cardAmount,
+                    $paymentMethodModel->provider_payment_method_id,
+                    $cardPlatformFeeAmount,
+                    [
                         'user_id' => $user->id,
-                    ]);
-                } catch (\Stripe\Exception\CardException $e) {
+                        'deal_type' => $session->get('deal_type'),
+                        'compensation_amount' => (string) $dealAmount,
+                        'platform_fee_amount' => (string) $cardPlatformFeeAmount,
+                        'escrow_amount' => (string) $escrowAmount,
+                        'payment_type' => 'partial_wallet',
+                        'wallet_amount_used' => (string) $walletAmountUsed,
+                        'business_total' => (string) $businessTotal,
+                    ],
+                    $customerId
+                );
+
+                if ($paymentIntent->status !== 'succeeded') {
                     DB::rollBack();
-                    Log::error('Stripe card payment failed (partial wallet)', [
-                        'error' => $e->getMessage(),
-                        'user_id' => $user->id,
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Card payment failed: ' . $e->getError()->message
-                    ]);
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    Log::error('Stripe payment processing failed (partial wallet)', [
-                        'error' => $e->getMessage(),
-                        'user_id' => $user->id,
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Payment processing failed: ' . $e->getMessage()
-                    ]);
+                    throw new \Exception('Card payment failed. Status: ' . $paymentIntent->status);
                 }
 
-            } else { // card_full
+                $paymentIntentId = $paymentIntent->id;
+                $chargeId = $paymentIntent->charges->data[0]->id ?? null;
+                $paymentStatus = 'pending'; // Wait for webhook confirmation
+
+                Log::info('Stripe PaymentIntent succeeded (partial wallet)', [
+                    'payment_intent_id' => $paymentIntentId,
+                    'card_amount' => $cardAmount,
+                    'wallet_amount' => $walletAmountUsed,
+                    'user_id' => $user->id,
+                ]);
+
+            } else { // card
                 // Pay fully via card
-                $cardAmount = $businessTotal;
-
-                // Verify payment method belongs to user
-                $paymentMethod = PaymentMethod::findOrFail($validated['payment_method_id']);
-                if ($paymentMethod->user_id !== $user->id) {
-                    return redirect()->back()->withErrors(['error' => 'Invalid payment method.']);
-                }
-
-                // Check if Stripe is configured
                 if (!$this->stripeService->isConfigured()) {
                     DB::rollBack();
-                    return redirect()->back()->withErrors([
-                        'error' => 'Stripe is not configured. Please contact support.'
-                    ]);
+                    throw new \Exception('Stripe is not configured. Please contact support.');
                 }
 
-                // Create or get Stripe customer
+                $paymentMethodModel = PaymentMethod::findOrFail($cardPaymentMethodId);
+                if ($paymentMethodModel->user_id !== $user->id) {
+                    DB::rollBack();
+                    throw new \Exception('Invalid payment method.');
+                }
+
                 $customerId = $this->stripeService->getOrCreateCustomer(
                     $user->id,
                     $user->email,
                     $user->name
                 );
 
-                // Create REAL Stripe PaymentIntent with application fee
-                try {
-                    $paymentIntent = $this->stripeService->createPaymentIntent(
-                        $cardAmount,
-                        $paymentMethod->provider_payment_method_id,
-                        $platformFeeAmount, // Platform fee (for metadata tracking only)
-                        [
-                            'user_id' => $user->id,
-                            'deal_type' => $session->get('deal_type'),
-                            'compensation_amount' => (string) $dealAmount,
-                            'platform_fee_amount' => (string) $platformFeeAmount,
-                            'escrow_amount' => (string) $escrowAmount,
-                            'business_total' => (string) $businessTotal,
-                        ],
-                        $customerId // Include customer ID
-                    );
-
-                    // Check payment intent status
-                    if ($paymentIntent->status === 'requires_action' || $paymentIntent->status === 'requires_confirmation') {
-                        // Payment needs additional authentication
-                        DB::rollBack();
-                        return redirect()->back()->withErrors([
-                            'error' => 'Payment requires additional authentication. Please try again.'
-                        ]);
-                    }
-
-                    if ($paymentIntent->status !== 'succeeded') {
-                        DB::rollBack();
-                        return redirect()->back()->withErrors([
-                            'error' => 'Payment failed. Status: ' . $paymentIntent->status
-                        ]);
-                    }
-
-                    $paymentIntentId = $paymentIntent->id;
-                    $chargeId = $paymentIntent->charges->data[0]->id ?? null;
-                    $session->put('payment_method', 'card');
-                    $session->put('card_payment_method_id', $paymentMethod->id);
-                    $session->put('card_amount', $cardAmount);
-                    $session->put('stripe_charge_id', $chargeId);
-
-                    Log::info('Stripe PaymentIntent succeeded', [
-                        'payment_intent_id' => $paymentIntentId,
-                        'amount' => $cardAmount,
+                $paymentIntent = $this->stripeService->createPaymentIntent(
+                    $cardAmount,
+                    $paymentMethodModel->provider_payment_method_id,
+                    $platformFeeAmount,
+                    [
                         'user_id' => $user->id,
-                    ]);
-                } catch (\Stripe\Exception\CardException $e) {
+                        'deal_type' => $session->get('deal_type'),
+                        'compensation_amount' => (string) $dealAmount,
+                        'platform_fee_amount' => (string) $platformFeeAmount,
+                        'escrow_amount' => (string) $escrowAmount,
+                        'business_total' => (string) $businessTotal,
+                    ],
+                    $customerId
+                );
+
+                if ($paymentIntent->status === 'requires_action' || $paymentIntent->status === 'requires_confirmation') {
                     DB::rollBack();
-                    Log::error('Stripe card payment failed', [
-                        'error' => $e->getMessage(),
-                        'user_id' => $user->id,
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Card payment failed: ' . $e->getError()->message
-                    ]);
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    Log::error('Stripe payment processing failed', [
-                        'error' => $e->getMessage(),
-                        'user_id' => $user->id,
-                    ]);
-                    return redirect()->back()->withErrors([
-                        'error' => 'Payment processing failed: ' . $e->getMessage()
-                    ]);
+                    throw new \Exception('Payment requires additional authentication. Please try again.');
                 }
+
+                if ($paymentIntent->status !== 'succeeded') {
+                    DB::rollBack();
+                    throw new \Exception('Payment failed. Status: ' . $paymentIntent->status);
+                }
+
+                $paymentIntentId = $paymentIntent->id;
+                $chargeId = $paymentIntent->charges->data[0]->id ?? null;
+                $paymentStatus = 'pending'; // Wait for webhook confirmation
+
+                Log::info('Stripe PaymentIntent succeeded', [
+                    'payment_intent_id' => $paymentIntentId,
+                    'amount' => $cardAmount,
+                    'user_id' => $user->id,
+                ]);
             }
 
             // Store payment info in session
-            $session->put('platform_fee_type', 'percentage');
-            $session->put('platform_fee_percentage', $platformFeePercentage);
-            $session->put('platform_fee_amount', $platformFeeAmount);
-            $session->put('escrow_amount', $escrowAmount);
-            $session->put('compensation_amount', $dealAmount); // Store original deal amount
-            $session->put('total_amount', $businessTotal); // Business total (deal_amount only)
-            $session->put('wallet_amount_used', $walletAmountUsed ?? 0);
-            $session->put('card_amount', $cardAmount ?? 0);
             $session->put('payment_intent_id', $paymentIntentId);
-            
-            // For wallet payments, mark as paid immediately
-            // For Stripe payments, wait for webhook confirmation
-            if ($validated['payment_method'] === 'wallet_full') {
-                $session->put('payment_status', 'paid');
-            } else {
-                // Card payments: wait for webhook to confirm
-                $session->put('payment_status', 'pending');
-            }
+            $session->put('stripe_charge_id', $chargeId);
+            $session->put('payment_status', $paymentStatus);
 
             DB::commit();
 
-            return redirect()->route('deals.review');
+            return [
+                'payment_intent_id' => $paymentIntentId,
+                'stripe_charge_id' => $chargeId,
+                'payment_status' => $paymentStatus,
+            ];
+
+        } catch (\Stripe\Exception\CardException $e) {
+            DB::rollBack();
+            Log::error('Stripe card payment failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+            ]);
+            throw new \Exception('Card payment failed: ' . $e->getError()->message);
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->withErrors(['error' => 'Payment processing failed: ' . $e->getMessage()]);
+            Log::error('Payment processing failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+            ]);
+            throw $e;
         }
     }
 
@@ -590,14 +602,20 @@ class PaymentController extends Controller
 
                 // Store transfer ID on deal but DO NOT mark as released yet
                 // Wait for Stripe webhook (transfer.paid) to confirm transfer succeeded
+                // CRITICAL: Payment release = Final Approval (regardless of deadline)
+                // Deadlines are informational only - they do NOT gate approval status
+                // Set is_approved immediately to ensure athlete and business views show consistent state
                 // Also store fee information for reference
                 $deal->update([
+                    'status' => 'approved', // Payment release = Final Approval - update status immediately
                     'stripe_transfer_id' => $transfer->id,
                     'stripe_transfer_status' => 'pending', // Will be updated by webhook
                     'release_transaction_id' => $transfer->id,
                     'athlete_fee_percentage' => $athleteFeePercentage,
                     'athlete_fee_amount' => $athleteFeeAmount,
                     'athlete_net_payout' => $athleteNetPayout,
+                    'is_approved' => true, // Payment release = Final Approval (regardless of deadline)
+                    'approved_at' => now(), // Mark approval timestamp
                 ]);
 
                 Log::info('Stripe transfer created - waiting for webhook confirmation', [

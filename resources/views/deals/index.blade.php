@@ -322,14 +322,14 @@
                                                     </svg>
                                                 </a>
                                             @endif
-                                            @if(!in_array($deal->status, ['completed', 'cancelled', 'draft']) && !$deal->released_at)
+                                            @if(!in_array($deal->status, ['completed', 'cancelled', 'draft']) && !$deal->released_at && !$deal->is_approved)
                                                 <a href="{{ route('deals.edit', $deal) }}" class="btn btn-ghost btn-xs btn-square" title="Edit">
                                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                     </svg>
                                                 </a>
                                             @endif
-                                            @if(($deal->status === 'completed' || $deal->status === 'approved') && !$deal->released_at)
+                                            @if(($deal->status === 'completed' || $deal->status === 'approved') && !$deal->released_at && !$deal->is_approved)
                                                 <button 
                                                     @click="requestRevisionDealId = {{ $deal->id }}; showRequestRevisionModal = true;" 
                                                     class="btn btn-ghost btn-xs btn-square text-warning" 
@@ -340,8 +340,13 @@
                                                 </button>
                                             @endif
                                             @if($deal->canBeReleased())
+                                                @php
+                                                    // Calculate net payout amount (after platform fee deduction)
+                                                    // This is the actual amount the athlete will receive
+                                                    $netPayoutAmount = $deal->athlete_net_payout ?? ($deal->compensation_amount - ($deal->platform_fee_amount ?? 0));
+                                                @endphp
                                                 <button 
-                                                    @click="releaseDealId = {{ $deal->id }}; releaseAmount = {{ $deal->escrow_amount }}; showReleaseModal = true;" 
+                                                    @click="releaseDealId = {{ $deal->id }}; releaseAmount = {{ $netPayoutAmount }}; showReleaseModal = true;" 
                                                     class="btn btn-ghost btn-xs btn-square text-success" 
                                                     title="Release Payment">
                                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -480,12 +485,14 @@
             <div class="modal-box">
                 <h3 class="font-bold text-lg">Release Escrow Payment</h3>
                 <p class="py-4">
-                    Are you sure you want to release $<span x-text="releaseAmount ? releaseAmount.toFixed(2) : '0.00'"></span> from escrow to the athlete? 
+                    Are you sure you want to release $<span x-text="releaseAmount ? releaseAmount.toFixed(2) : '0.00'"></span> to the athlete? 
+                    <br><br>
+                    <strong>Note:</strong> This is the net payout amount after the platform fee has been deducted. The athlete will receive exactly $<span x-text="releaseAmount ? releaseAmount.toFixed(2) : '0.00'"></span>.
                     <br><br>
                     <strong>This action:</strong>
                     <ul class="list-disc list-inside mt-2 text-sm">
-                        <li>Releases funds from escrow to the athlete</li>
-                        <li>Finalizes platform fees</li>
+                        <li>Releases the net payout amount to the athlete</li>
+                        <li>Platform fee has already been deducted</li>
                         <li>Cannot be undone</li>
                     </ul>
                 </p>

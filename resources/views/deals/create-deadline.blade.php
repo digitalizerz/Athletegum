@@ -17,25 +17,47 @@
                         {{-- Athlete Email --}}
                         <div class="mb-6">
                             <label for="athlete_email" class="label">
-                                <span class="label-text">Athlete Email <span class="text-error">*</span></span>
+                                <span class="label-text">
+                                    Athlete Email 
+                                    @if(!($hasPreselectedAthlete ?? false))
+                                        <span class="text-error">*</span>
+                                    @endif
+                                </span>
                             </label>
-                            <x-text-input
-                                id="athlete_email"
-                                type="email"
-                                name="athlete_email"
-                                value="{{ old('athlete_email', $preselectedAthleteEmail ?? '') }}"
-                                class="input input-bordered w-full {{ isset($preselectedAthleteEmail) ? 'bg-gray-50' : '' }}"
-                                placeholder="athlete@example.com"
-                                {{ isset($preselectedAthleteEmail) ? 'readonly' : '' }}
-                                {{ !isset($preselectedAthleteEmail) ? 'required' : '' }}
-                            />
-                            @if(isset($preselectedAthleteEmail))
-                                <p class="mt-1.5 text-xs text-blue-600">
-                                    Athlete preselected from profile.
-                                </p>
+                            @if($hasPreselectedAthlete ?? false)
+                                <x-text-input
+                                    id="athlete_email"
+                                    type="email"
+                                    name="athlete_email"
+                                    value="{{ old('athlete_email', $preselectedAthleteEmail ?? '') }}"
+                                    class="input input-bordered w-full bg-gray-100"
+                                    placeholder="athlete@example.com"
+                                    readonly
+                                    style="background-color: #f3f4f6; cursor: not-allowed;"
+                                />
+                            @else
+                                <x-text-input
+                                    id="athlete_email"
+                                    type="email"
+                                    name="athlete_email"
+                                    value="{{ old('athlete_email', $preselectedAthleteEmail ?? '') }}"
+                                    class="input input-bordered w-full"
+                                    placeholder="athlete@example.com"
+                                    required
+                                />
+                            @endif
+                            @if($hasPreselectedAthlete ?? false)
+                                <div class="mt-1.5 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <p class="text-xs text-blue-600 font-medium">
+                                        Athlete preselected from your list. Email is locked.
+                                    </p>
+                                </div>
                             @else
                                 <p class="mt-1.5 text-xs text-base-content/60">
-                                    This deal invitation will be sent specifically to this athlete. Only they can accept it.
+                                    Enter the athlete's email address. This deal invitation will be sent specifically to this athlete. Only they can accept it.
                                 </p>
                             @endif
                             <x-input-error :messages="$errors->get('athlete_email')" class="mt-1" />

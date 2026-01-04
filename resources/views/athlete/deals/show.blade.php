@@ -188,7 +188,26 @@
                             <div class="whitespace-pre-wrap">{{ $deal->completion_notes }}</div>
                         </div>
                         @endif
-                        @if($deal->is_approved)
+                        @php
+                            // Payment release = Final Approval (regardless of deadline)
+                            // Deadlines are informational only - they do NOT gate approval status
+                            // Approval is determined solely by payment release status, never by deadline
+                            // Check multiple indicators of payment release/approval:
+                            // 1. released_at - Payment fully released (webhook confirmed)
+                            // 2. is_approved - Approval flag (boolean, can be true/false/null)
+                            // 3. stripe_transfer_id - Payment transfer created (payment release initiated)
+                            // 4. payment_status === 'released' or 'processing' - Payment processing/released
+                            // 5. status === 'approved' - Deal status explicitly set to approved
+                            $hasPaymentRelease = $deal->released_at !== null;
+                            $hasStripeTransfer = !empty($deal->stripe_transfer_id);
+                            $hasApprovalFlag = $deal->is_approved === true || $deal->is_approved === 1 || $deal->is_approved === '1';
+                            $hasProcessingStatus = in_array($deal->payment_status, ['released', 'processing']);
+                            $hasApprovedStatus = $deal->status === 'approved';
+                            
+                            // Approval is TRUE if ANY of these conditions are met (deadline is NOT checked)
+                            $isApproved = $hasPaymentRelease || $hasStripeTransfer || $hasApprovalFlag || $hasProcessingStatus || $hasApprovedStatus;
+                        @endphp
+                        @if($isApproved)
                             <div class="badge badge-success">Approved by Business</div>
                         @elseif($deal->status === 'completed')
                             <div class="badge badge-warning">Awaiting Business Approval</div>

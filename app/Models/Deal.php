@@ -242,7 +242,8 @@ class Deal extends Model
             return 'Payout Pending Clearing';
         }
 
-        if ($this->is_approved) {
+        // Payment release = Final Approval - check both released_at and is_approved
+        if ($this->released_at || $this->is_approved) {
             return 'Ready to Release';
         }
 
@@ -266,7 +267,8 @@ class Deal extends Model
             return 'badge-warning';
         }
 
-        if ($this->is_approved) {
+        // Payment release = Final Approval - check both released_at and is_approved
+        if ($this->released_at || $this->is_approved) {
             return 'badge-info';
         }
 
@@ -284,7 +286,8 @@ class Deal extends Model
             && $this->released_at === null
             && $this->status !== 'cancelled'
             && ($this->status === 'completed' || $this->is_approved)
-            && !$this->awaiting_funds; // Cannot release if funds are still pending
+            && !$this->awaiting_funds // Cannot release if funds are still pending
+            && !$this->is_approved; // Cannot release if already approved (payment release sets approval)
     }
 
     /**
@@ -306,7 +309,8 @@ class Deal extends Model
             return false;
         }
 
-        return now()->isAfter($this->deadline) && !$this->is_approved;
+        // Deal is expired if past deadline and not approved/released (payment release = approval)
+        return now()->isAfter($this->deadline) && !$this->is_approved && !$this->released_at;
     }
 
     /**
