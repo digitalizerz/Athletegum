@@ -453,9 +453,8 @@ select:focus {
     color: #111827 !important;
 }
 
-/* Force sidebar and navigation */
+/* Force sidebar containers only (do not affect top nav) */
 aside,
-nav,
 .sidebar {
     background-color: #ffffff !important;
     color: #111827 !important;

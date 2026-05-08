@@ -211,19 +211,22 @@ class StripeWebhookController extends Controller
                 \Illuminate\Support\Facades\DB::beginTransaction();
 
                 // Update deal to released status - Stripe Transfer is successful on created
+                // CRITICAL: Payment release = Final Approval (regardless of deadline)
+                // Deadlines are informational only - they do NOT gate approval status
+                // ALWAYS set is_approved = true when payment is released
                 $wasApproved = $deal->is_approved;
                 $updateData = [
                     'stripe_transfer_id' => $transfer->id,
                     'stripe_transfer_status' => 'paid',
                     'released_at' => now(),
                     'release_transaction_id' => $transfer->id,
-                    'status' => 'completed',
+                    'status' => 'approved', // Payment release = Final Approval (not 'completed')
                     'payment_status' => 'released', // Mark as released - Stripe confirmed
+                    'is_approved' => true, // ALWAYS set approval when payment is released
                 ];
 
-                // Auto-approve if not already approved
-                if (!$wasApproved) {
-                    $updateData['is_approved'] = true;
+                // Set approved_at if not already set
+                if (!$deal->approved_at) {
                     $updateData['approved_at'] = now();
                 }
 
