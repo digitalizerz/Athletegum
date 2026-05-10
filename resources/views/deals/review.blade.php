@@ -97,37 +97,7 @@
                             <div class="border-t border-base-300 pt-3">
                                 <div class="text-xs text-base-content/60 mb-1.5">Payment Method</div>
                                 <div class="space-y-2">
-                                    @if($paymentMethod === 'wallet')
-                                        <div class="flex items-center space-x-2">
-                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                                            </svg>
-                                            <span class="text-sm font-medium">Wallet - ${{ number_format($totalAmount, 2) }}</span>
-                                        </div>
-                                    @elseif($paymentMethod === 'wallet_card')
-                                        <div class="space-y-1.5">
-                                            <div class="flex items-center space-x-2">
-                                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                                                </svg>
-                                                <span class="text-sm font-medium">Wallet - ${{ number_format($walletAmountUsed, 2) }}</span>
-                                            </div>
-                                            @if($cardPaymentMethod)
-                                                <div class="flex items-center space-x-2 pl-8">
-                                                    @if($cardPaymentMethod->brand === 'visa')
-                                                        <div class="w-10 h-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">VISA</div>
-                                                    @elseif($cardPaymentMethod->brand === 'mastercard')
-                                                        <div class="w-10 h-6 bg-red-600 rounded flex items-center justify-center text-white font-bold text-xs">MC</div>
-                                                    @elseif($cardPaymentMethod->brand === 'amex')
-                                                        <div class="w-10 h-6 bg-blue-500 rounded flex items-center justify-center text-white font-bold text-xs">AMEX</div>
-                                                    @else
-                                                        <div class="w-10 h-6 bg-base-300 rounded flex items-center justify-center text-base-content/60 font-bold text-xs">CARD</div>
-                                                    @endif
-                                                    <span class="text-sm font-medium">Card - ${{ number_format($cardAmount, 2) }}</span>
-                                                </div>
-                                            @endif
-                                        </div>
-                                    @elseif($paymentMethod === 'card' && $cardPaymentMethod)
+                                    @if($paymentMethod === 'card' && $cardPaymentMethod)
                                         <div class="flex items-center space-x-2">
                                             @if($cardPaymentMethod->brand === 'visa')
                                                 <div class="w-10 h-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">VISA</div>
@@ -138,8 +108,10 @@
                                             @else
                                                 <div class="w-10 h-6 bg-base-300 rounded flex items-center justify-center text-base-content/60 font-bold text-xs">CARD</div>
                                             @endif
-                                            <span class="text-sm font-medium">•••• {{ $cardPaymentMethod->last_four }} - ${{ number_format($totalAmount, 2) }}</span>
+                                            <span class="text-sm font-medium">•••• {{ $cardPaymentMethod->last_four }} — ${{ number_format($totalAmount, 2) }}</span>
                                         </div>
+                                    @else
+                                        <span class="text-sm text-base-content/60">Saved card (review payment step if this looks wrong).</span>
                                     @endif
                                 </div>
                             </div>
@@ -154,7 +126,7 @@
                                         <span>${{ number_format($compensationAmount, 2) }}</span>
                                     </div>
                                     <div class="flex justify-between">
-                                        <span class="text-base-content/60">Platform Fee ({{ $platformFeePercentage }}%):</span>
+                                        <span class="text-base-content/60">Platform Fee{{ isset($platformFeePercentage) && $platformFeePercentage !== null ? ' (' . $platformFeePercentage . '%)' : '' }}:</span>
                                         <span>${{ number_format($platformFeeAmount, 2) }}</span>
                                     </div>
                                     <div class="flex justify-between pt-1 border-t border-base-300 font-semibold">

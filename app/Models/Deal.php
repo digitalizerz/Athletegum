@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class Deal extends Model
@@ -19,6 +20,8 @@ class Deal extends Model
         'platform_fee_amount',
         'escrow_amount',
         'total_amount',
+        'wallet_amount_applied',
+        'card_amount_charged',
         'deadline',
         'deadline_time',
         'frequency',
@@ -30,6 +33,7 @@ class Deal extends Model
         'approval_notes',
         'payment_status',
         'awaiting_funds',
+        'payout_auto_retry_requested_at',
         'payment_intent_id',
         'stripe_charge_id',
         'paid_at',
@@ -57,6 +61,8 @@ class Deal extends Model
             'platform_fee_amount' => 'decimal:2',
             'escrow_amount' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'wallet_amount_applied' => 'decimal:2',
+            'card_amount_charged' => 'decimal:2',
             'athlete_fee_percentage' => 'decimal:2',
             'athlete_fee_amount' => 'decimal:2',
             'athlete_net_payout' => 'decimal:2',
@@ -68,6 +74,7 @@ class Deal extends Model
             'is_approved' => 'boolean',
             'approved_at' => 'datetime',
             'awaiting_funds' => 'boolean',
+            'payout_auto_retry_requested_at' => 'datetime',
             'paid_at' => 'datetime',
             'released_at' => 'datetime',
             'deliverables' => 'array',
@@ -107,6 +114,11 @@ class Deal extends Model
         return $this->belongsTo(Athlete::class);
     }
 
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class);
+    }
+
     public function invitations()
     {
         return $this->hasMany(DealInvitation::class);
@@ -128,32 +140,81 @@ class Deal extends Model
     }
 
     /**
+     * Split a deal compensation amount using admin SMB fee + athlete fee settings.
+     * Business pays compensation only; platform + athlete fees come out of that amount.
+     */
+    public static function feeSplitFromCompensation(float $compensation): array
+    {
+        $smbFee = PlatformSetting::getSMBPlatformFee();
+
+        if ($smbFee['type'] === 'percentage') {
+            $platformFeeAmount = round($compensation * ($smbFee['value'] / 100), 2);
+            $platformFeePercentage = $smbFee['value'];
+        } else {
+            $platformFeeAmount = round(min((float) $smbFee['value'], $compensation), 2);
+            $platformFeePercentage = null;
+        }
+
+        $athletePct = PlatformSetting::getAthletePlatformFeePercentage();
+        $athleteFeeAmount = round($compensation * ($athletePct / 100), 2);
+        $athleteNetPayout = max(0.0, round($compensation - $platformFeeAmount - $athleteFeeAmount, 2));
+
+        return [
+            'platform_fee_type' => $smbFee['type'],
+            'platform_fee_percentage' => $platformFeePercentage,
+            'platform_fee_value' => $smbFee['value'],
+            'platform_fee_amount' => $platformFeeAmount,
+            'athlete_fee_percentage' => $athletePct,
+            'athlete_fee_amount' => $athleteFeeAmount,
+            'athlete_net_payout' => $athleteNetPayout,
+            'escrow_amount' => round($compensation, 2),
+            'total_amount' => round($compensation, 2),
+        ];
+    }
+
+    /**
+     * Amounts used when releasing escrow (prefers values stored on the deal at creation).
+     */
+    public function getPayoutAmountsForRelease(): array
+    {
+        $dealAmount = (float) $this->compensation_amount;
+        $platformFeeAmount = (float) ($this->platform_fee_amount ?? 0);
+        $athletePct = (float) ($this->athlete_fee_percentage ?? PlatformSetting::getAthletePlatformFeePercentage());
+        $athleteFeeAmount = $this->athlete_fee_amount !== null
+            ? (float) $this->athlete_fee_amount
+            : round($dealAmount * ($athletePct / 100), 2);
+        $net = $this->athlete_net_payout !== null
+            ? (float) $this->athlete_net_payout
+            : max(0.0, round($dealAmount - $platformFeeAmount - $athleteFeeAmount, 2));
+
+        return [
+            'deal_amount' => $dealAmount,
+            'platform_fee_amount' => $platformFeeAmount,
+            'athlete_fee_percentage' => $athletePct,
+            'athlete_fee_amount' => $athleteFeeAmount,
+            'athlete_net_payout' => max(0.0, round($net, 2)),
+        ];
+    }
+
+    /**
      * Calculate payment breakdown using current SMB fee settings
      */
     public function calculatePaymentBreakdown(): array
     {
-        $smbFee = PlatformSetting::getSMBPlatformFee();
         $compensation = (float) $this->compensation_amount;
-        
-        if ($smbFee['type'] === 'percentage') {
-            $platformFee = round($compensation * ($smbFee['value'] / 100), 2);
-            $platformFeePercentage = $smbFee['value'];
-        } else {
-            $platformFee = round($smbFee['value'], 2);
-            $platformFeePercentage = null;
-        }
-        
-        $escrowAmount = round($compensation, 2);
-        $totalAmount = round($compensation, 2); // Business pays deal_amount only (platform fee comes OUT OF deal_amount)
+        $split = self::feeSplitFromCompensation($compensation);
 
         return [
             'compensation_amount' => $compensation,
-            'platform_fee_type' => $smbFee['type'],
-            'platform_fee_percentage' => $platformFeePercentage,
-            'platform_fee_value' => $smbFee['value'],
-            'platform_fee_amount' => $platformFee,
-            'escrow_amount' => $escrowAmount,
-            'total_amount' => $totalAmount,
+            'platform_fee_type' => $split['platform_fee_type'],
+            'platform_fee_percentage' => $split['platform_fee_percentage'],
+            'platform_fee_value' => $split['platform_fee_value'],
+            'platform_fee_amount' => $split['platform_fee_amount'],
+            'athlete_fee_percentage' => $split['athlete_fee_percentage'],
+            'athlete_fee_amount' => $split['athlete_fee_amount'],
+            'athlete_net_payout' => $split['athlete_net_payout'],
+            'escrow_amount' => $split['escrow_amount'],
+            'total_amount' => $split['total_amount'],
         ];
     }
 
@@ -286,8 +347,7 @@ class Deal extends Model
             && $this->released_at === null
             && $this->status !== 'cancelled'
             && ($this->status === 'completed' || $this->is_approved)
-            && !$this->awaiting_funds // Cannot release if funds are still pending
-            && !$this->is_approved; // Cannot release if already approved (payment release sets approval)
+            && !$this->awaiting_funds;
     }
 
     /**

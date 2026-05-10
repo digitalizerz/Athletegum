@@ -158,8 +158,6 @@ Route::prefix('athlete')->name('athlete.')->group(function () {
 Route::middleware('auth')->group(function () {
 
     Route::get('/wallet', [WalletController::class, 'index'])->name('wallet.index');
-    Route::get('/wallet/add-funds', [WalletController::class, 'showAddFunds'])->name('wallet.add-funds');
-    Route::post('/wallet/add-funds', [WalletController::class, 'addFunds'])->name('wallet.add-funds.store');
 
     Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->name('payment-methods.index');
     Route::get('/payment-methods/create', [PaymentMethodController::class, 'create'])->name('payment-methods.create');

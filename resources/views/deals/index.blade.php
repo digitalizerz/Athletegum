@@ -343,7 +343,13 @@
                                                 @php
                                                     // Calculate net payout amount (after platform fee deduction)
                                                     // This is the actual amount the athlete will receive
-                                                    $netPayoutAmount = $deal->athlete_net_payout ?? ($deal->compensation_amount - ($deal->platform_fee_amount ?? 0));
+                                                    $netPayoutAmount = $deal->athlete_net_payout
+                                                        ?? max(
+                                                            0,
+                                                            ($deal->compensation_amount ?? 0)
+                                                                - ($deal->platform_fee_amount ?? 0)
+                                                                - ($deal->athlete_fee_amount ?? 0)
+                                                        );
                                                 @endphp
                                                 <button 
                                                     @click="releaseDealId = {{ $deal->id }}; releaseAmount = {{ $netPayoutAmount }}; showReleaseModal = true;" 

@@ -146,30 +146,29 @@ class StripeFeesController extends Controller
      */
     private function getFeeStatistics()
     {
-        // This would query actual deal/payment data
-        // For now, return placeholder structure
+        $paidLike = ['paid', 'paid_escrowed', 'released'];
+
         return [
-            'total_platform_fees' => DB::table('deals')
-                ->where('payment_status', 'paid')
-                ->sum('platform_fee_amount') ?? 0,
-            'total_smb_fees' => DB::table('deals')
-                ->where('payment_status', 'paid')
-                ->sum('platform_fee_amount') ?? 0,
-            'total_athlete_fees' => DB::table('deals')
-                ->where('payment_status', 'paid')
+            'total_platform_fees' => (float) DB::table('deals')
+                ->whereIn('payment_status', $paidLike)
+                ->sum('platform_fee_amount'),
+            'total_smb_fees' => (float) DB::table('deals')
+                ->whereIn('payment_status', $paidLike)
+                ->sum('platform_fee_amount'),
+            'total_athlete_fees' => (float) DB::table('deals')
+                ->whereIn('payment_status', $paidLike)
+                ->sum('athlete_fee_amount'),
+            'total_athlete_payouts_gross' => (float) DB::table('deals')
+                ->where('payment_status', 'released')
                 ->whereNotNull('released_at')
-                ->sum(DB::raw('(escrow_amount * athlete_fee_percentage / 100)')) ?? 0,
-            'total_athlete_payouts_gross' => DB::table('deals')
-                ->where('payment_status', 'paid')
+                ->sum('compensation_amount'),
+            'total_athlete_payouts_net' => (float) DB::table('deals')
+                ->where('payment_status', 'released')
                 ->whereNotNull('released_at')
-                ->sum('escrow_amount') ?? 0,
-            'total_athlete_payouts_net' => DB::table('deals')
-                ->where('payment_status', 'paid')
-                ->whereNotNull('released_at')
-                ->sum(DB::raw('escrow_amount - (escrow_amount * athlete_fee_percentage / 100)')) ?? 0,
-            'total_smb_charges' => DB::table('deals')
-                ->where('payment_status', 'paid')
-                ->sum(DB::raw('compensation_amount + platform_fee_amount')) ?? 0,
+                ->sum('athlete_net_payout'),
+            'total_smb_charges' => (float) DB::table('deals')
+                ->whereIn('payment_status', $paidLike)
+                ->sum('compensation_amount'),
         ];
     }
 }

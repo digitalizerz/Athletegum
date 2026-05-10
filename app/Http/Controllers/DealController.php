@@ -359,24 +359,13 @@ class DealController extends Controller
 
         $paymentMethods = Auth::user()->paymentMethods()->where('is_active', true)->orderBy('is_default', 'desc')->get();
 
-        // Calculate payment breakdown using SMB platform fee
         $compensationAmount = (float) $session->get('compensation_amount');
-        $smbFee = \App\Models\PlatformSetting::getSMBPlatformFee();
-        
-        if ($smbFee['type'] === 'percentage') {
-            $platformFeeAmount = round($compensationAmount * ($smbFee['value'] / 100), 2);
-            $platformFeePercentage = $smbFee['value'];
-        } else {
-            $platformFeeAmount = round($smbFee['value'], 2);
-            $platformFeePercentage = null; // Fixed fee, no percentage
-        }
-        
-        $escrowAmount = round($compensationAmount, 2);
-        $totalAmount = round($compensationAmount, 2); // Business pays deal_amount only (platform fee comes OUT OF deal_amount)
+        $split = Deal::feeSplitFromCompensation($compensationAmount);
 
-        // Get user's wallet balance
-        $walletBalance = (float) Auth::user()->wallet_balance ?? 0.00;
-        $hasSufficientBalance = $walletBalance >= $totalAmount;
+        $platformFeeAmount = $split['platform_fee_amount'];
+        $platformFeePercentage = $split['platform_fee_percentage'];
+        $escrowAmount = $split['escrow_amount'];
+        $totalAmount = $split['total_amount'];
 
         return view('deals.create-payment', [
             'paymentMethods' => $paymentMethods,
@@ -385,8 +374,6 @@ class DealController extends Controller
             'platformFeeAmount' => $platformFeeAmount,
             'escrowAmount' => $escrowAmount,
             'totalAmount' => $totalAmount,
-            'walletBalance' => $walletBalance,
-            'hasSufficientBalance' => $hasSufficientBalance,
         ]);
     }
 
@@ -417,9 +404,7 @@ class DealController extends Controller
         $platformFeeAmount = $session->get('platform_fee_amount');
         $escrowAmount = $session->get('escrow_amount');
         $totalAmount = $session->get('total_amount');
-        $paymentMethod = $session->get('payment_method'); // 'wallet', 'wallet_card', or 'card'
-        $walletAmountUsed = $session->get('wallet_amount_used', 0);
-        $cardAmount = $session->get('card_amount', 0);
+        $paymentMethod = $session->get('payment_method');
         $cardPaymentMethodId = $session->get('card_payment_method_id');
         $cardPaymentMethod = $cardPaymentMethodId ? \App\Models\PaymentMethod::find($cardPaymentMethodId) : null;
 
@@ -441,8 +426,6 @@ class DealController extends Controller
             'escrowAmount' => $escrowAmount,
             'totalAmount' => $totalAmount,
             'paymentMethod' => $paymentMethod,
-            'walletAmountUsed' => $walletAmountUsed,
-            'cardAmount' => $cardAmount,
             'cardPaymentMethod' => $cardPaymentMethod,
             'hasPaymentMethod' => $hasPaymentMethod,
         ]);
@@ -503,24 +486,21 @@ class DealController extends Controller
         $contractSigned = $session->get('contract_signed', false);
         
         // Get payment data from session
-        $paymentMethod = $session->get('payment_method'); // wallet, wallet_card, or card
+        $paymentMethod = $session->get('payment_method'); // card
         $cardPaymentMethodId = $session->get('card_payment_method_id');
-        $walletAmountUsed = $session->get('wallet_amount_used', 0);
-        $cardAmount = $session->get('card_amount', 0);
+        $walletAmountUsed = (float) $session->get('wallet_amount_used', 0);
+        $cardAmount = (float) $session->get('card_amount', 0);
         $platformFeeType = $session->get('platform_fee_type', 'percentage');
         $platformFeePercentage = $session->get('platform_fee_percentage');
         $platformFeeAmount = $session->get('platform_fee_amount');
         $escrowAmount = $session->get('escrow_amount');
         $totalAmount = $session->get('total_amount');
         $paymentIntentId = $session->get('payment_intent_id');
-        
-        // Calculate athlete fees (for when payment is released)
-        // Platform takes 10% via application_fee_amount at payment time
-        // Athletes pay $0 platform fee
-        // Athlete receives: deal_amount - platform_fee_amount (90% of deal amount)
-        $athleteFeePercentage = 0.0; // Athletes pay $0 platform fee
-        $athleteFeeAmount = 0.0; // No athlete fee
-        $athleteNetPayout = round($compensationAmount - $platformFeeAmount, 2); // Athlete receives deal_amount - platform_fee
+
+        $feeDefaults = Deal::feeSplitFromCompensation((float) $compensationAmount);
+        $athleteFeePercentage = (float) ($session->get('athlete_fee_percentage') ?? $feeDefaults['athlete_fee_percentage']);
+        $athleteFeeAmount = (float) ($session->get('athlete_fee_amount') ?? $feeDefaults['athlete_fee_amount']);
+        $athleteNetPayout = (float) ($session->get('athlete_net_payout') ?? $feeDefaults['athlete_net_payout']);
         $paymentStatus = $session->get('payment_status', 'pending');
 
         // Check if user has payment methods - required before final submission
@@ -610,10 +590,21 @@ class DealController extends Controller
                 $existingDraft->update([
                     'payment_method_id' => $cardPaymentMethodId,
                     'status' => 'pending',
-                    'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus, // Mark as paid_escrowed when payment succeeds
+                    'payment_status' => $paymentStatus === 'paid' ? 'paid_escrowed' : $paymentStatus,
                     'payment_intent_id' => $paymentIntentId,
-                    'stripe_charge_id' => $chargeId ?? $session->get('stripe_charge_id'), // Store charge ID for reference
+                    'stripe_charge_id' => $chargeId ?? $session->get('stripe_charge_id'),
                     'paid_at' => $paymentStatus === 'paid' ? now() : null,
+                    'compensation_amount' => $compensationAmount,
+                    'platform_fee_percentage' => $platformFeePercentage,
+                    'platform_fee_amount' => $platformFeeAmount,
+                    'escrow_amount' => $escrowAmount,
+                    'total_amount' => $totalAmount,
+                    'athlete_fee_percentage' => $athleteFeePercentage,
+                    'athlete_fee_amount' => $athleteFeeAmount,
+                    'athlete_net_payout' => $athleteNetPayout,
+                    'awaiting_funds' => false,
+                    'wallet_amount_applied' => $walletAmountUsed,
+                    'card_amount_charged' => $cardAmount,
                 ]);
                 $deal = $existingDraft;
             } else {
@@ -644,6 +635,9 @@ class DealController extends Controller
                     'payment_intent_id' => $paymentIntentId,
                     'stripe_charge_id' => $chargeId ?? $session->get('stripe_charge_id'), // Store charge ID for reference
                     'paid_at' => $paymentStatus === 'paid' ? now() : null,
+                    'awaiting_funds' => false,
+                    'wallet_amount_applied' => $walletAmountUsed,
+                    'card_amount_charged' => $cardAmount,
                 ]);
             }
 
@@ -702,39 +696,13 @@ class DealController extends Controller
             ]);
         }
 
-        // Create wallet transaction for the deal payment (if wallet was used)
-        if ($walletAmountUsed > 0) {
-            \App\Models\WalletTransaction::create([
-                'user_id' => Auth::id(),
-                'type' => 'payment',
-                'status' => 'completed',
-                'amount' => -$walletAmountUsed, // Negative for payment
-                'balance_before' => Auth::user()->wallet_balance + $walletAmountUsed, // Balance before this deduction
-                'balance_after' => Auth::user()->wallet_balance, // Current balance (already deducted)
-                'payment_method' => $paymentMethod === 'wallet_card' ? 'wallet_partial' : 'wallet',
-                'payment_provider_transaction_id' => $paymentIntentId,
-                'deal_id' => $deal->id,
-                'description' => $paymentMethod === 'wallet_card' 
-                    ? "Partial payment for deal #{$deal->id} (wallet: $" . number_format($walletAmountUsed, 2) . ", card: $" . number_format($cardAmount, 2) . ")"
-                    : "Payment for deal #{$deal->id}",
-                'metadata' => json_encode([
-                    'platform_fee_percentage' => $platformFeePercentage,
-                    'platform_fee_amount' => $platformFeeAmount,
-                    'escrow_amount' => $escrowAmount,
-                    'compensation_amount' => $compensationAmount,
-                    'wallet_amount_used' => $walletAmountUsed,
-                    'card_amount' => $cardAmount,
-                    'payment_method' => $paymentMethod,
-                ]),
-            ]);
-        }
-
         // Clear session data
         $session->forget([
             'deal_type', 'platforms', 'compensation_amount', 'deadline', 'deadline_time', 
             'frequency', 'notes', 'attachments', 'contract_text', 'contract_signed',
             'payment_method', 'payment_method_id', 'card_payment_method_id', 'wallet_amount_used', 'card_amount',
             'platform_fee_percentage', 'platform_fee_amount', 'platform_fee_type',
+            'athlete_fee_percentage', 'athlete_fee_amount', 'athlete_net_payout',
             'escrow_amount', 'total_amount', 'payment_intent_id', 'payment_status', 'athlete_email',
             'resuming_draft_id'
         ]);

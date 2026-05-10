@@ -55,24 +55,30 @@ class PlatformSetting extends Model
     }
 
     /**
-     * Get SMB platform fee (fixed at 10% per marketplace rules)
-     * Business pays: deal_amount + (deal_amount × 10%)
+     * SMB / business-side platform fee (admin: Stripe & Fees).
+     * Business pays the deal amount; the platform fee is taken out of that amount (not added on top).
      */
     public static function getSMBPlatformFee(): array
     {
+        $type = self::get('smb_platform_fee_type', 'percentage');
+        if (!in_array($type, ['percentage', 'fixed'], true)) {
+            $type = 'percentage';
+        }
+        $value = (float) self::get('smb_platform_fee_value', 10.0);
+
         return [
-            'type' => 'percentage',
-            'value' => 10.0, // Fixed 10% business fee - cannot be changed
+            'type' => $type,
+            'value' => $value,
         ];
     }
 
     /**
-     * Get athlete platform fee percentage (fixed at 5% per marketplace rules)
-     * Athlete receives: deal_amount - (deal_amount × 5%)
+     * Additional platform fee on the athlete side (percentage of deal value), kept by the platform.
+     * Athlete net = deal - SMB platform fee - athlete fee.
      */
     public static function getAthletePlatformFeePercentage(): float
     {
-        return 5.0; // Fixed 5% athlete fee - cannot be changed
+        return (float) self::get('athlete_platform_fee_percentage', 0.0);
     }
 
     /**

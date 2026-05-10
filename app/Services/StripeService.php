@@ -60,9 +60,9 @@ class StripeService
 
     /**
      * Create a PaymentIntent for a deal payment
-     * 
-     * Note: We use platform charges + separate transfers (not direct charges)
-     * Platform revenue comes from remaining balance after transferring to athlete
+     *
+     * Uses separate charges and transfers: funds settle on the platform account first.
+     * Platform and athlete fee splits are enforced when releasing escrow (Transfer), not via application_fee_amount.
      * 
      * @param float $amount Amount in dollars (will be converted to cents) - this is the deal_amount the business pays
      * @param string $paymentMethodId Stripe payment method ID
@@ -233,7 +233,7 @@ class StripeService
      * Note: This requires Stripe Connect. The athlete must have a connected Stripe account.
      * Transfers from platform balance (not from a specific charge).
      * 
-     * @param float $amount Amount in dollars (net payout after athlete fee = deal_amount - 5%)
+     * @param float $amount Amount in dollars — athlete net payout after SMB platform fee and athlete fee (see deals table)
      * @param string $athleteStripeAccountId Athlete's Stripe Connect account ID (acct_xxx)
      * @param string $idempotencyKey Idempotency key to prevent duplicate transfers
      * @param array $metadata Additional metadata
@@ -373,31 +373,51 @@ class StripeService
      */
     public function getAvailableBalance(): float
     {
+        return $this->getUsdBalanceBreakdown()['available'];
+    }
+
+    /**
+     * USD balance on the platform Stripe account (available, pending, and combined).
+     * Connect transfers only use available balance; pending indicates funds still settling.
+     *
+     * @return array{available: float, pending: float, total: float}
+     */
+    public function getUsdBalanceBreakdown(): array
+    {
         if (!$this->isConfigured()) {
             throw new \Exception('Stripe is not configured');
         }
 
         try {
             $balance = \Stripe\Balance::retrieve();
-            
-            // Get available balance (funds that can be transferred)
-            // Stripe returns balance in cents, convert to dollars
-            $availableBalance = 0;
-            foreach ($balance->available as $available) {
-                if ($available->currency === 'usd') {
-                    $availableBalance += $available->amount;
+
+            $availableCents = 0;
+            foreach ($balance->available as $chunk) {
+                if ($chunk->currency === 'usd') {
+                    $availableCents += $chunk->amount;
                 }
             }
-            
-            // Convert from cents to dollars
-            $availableBalanceInDollars = $availableBalance / 100;
-            
+
+            $pendingCents = 0;
+            foreach ($balance->pending as $chunk) {
+                if ($chunk->currency === 'usd') {
+                    $pendingCents += $chunk->amount;
+                }
+            }
+
+            $available = $availableCents / 100;
+            $pending = $pendingCents / 100;
+
             Log::info('Stripe balance retrieved', [
-                'available_balance' => $availableBalanceInDollars,
-                'pending_balance' => ($balance->pending[0]->amount ?? 0) / 100,
+                'available_balance' => $available,
+                'pending_balance' => $pending,
             ]);
-            
-            return $availableBalanceInDollars;
+
+            return [
+                'available' => $available,
+                'pending' => $pending,
+                'total' => $available + $pending,
+            ];
         } catch (ApiErrorException $e) {
             Log::error('Failed to retrieve Stripe balance', [
                 'error' => $e->getMessage(),

@@ -115,9 +115,8 @@ class StripeWebhookController extends Controller
         }
         
         $deal->update([
-            'payment_status' => 'paid_escrowed', // Mark as paid_escrowed (escrow is internal)
-            'awaiting_funds' => true, // Funds may still be pending in Stripe
-            'stripe_charge_id' => $chargeId, // Store charge ID for reference
+            'payment_status' => 'paid_escrowed',
+            'stripe_charge_id' => $chargeId,
             'paid_at' => now(),
         ]);
 
@@ -165,9 +164,8 @@ class StripeWebhookController extends Controller
 
             if ($deal && $deal->payment_status !== 'paid_escrowed' && $deal->payment_status !== 'paid') {
                 $deal->update([
-                    'payment_status' => 'paid_escrowed', // Mark as paid_escrowed (escrow is internal)
-                    'awaiting_funds' => true, // Funds may still be pending in Stripe
-                    'stripe_charge_id' => $charge->id, // Store charge ID for reference
+                    'payment_status' => 'paid_escrowed',
+                    'stripe_charge_id' => $charge->id,
                     'paid_at' => now(),
                 ]);
 
@@ -223,6 +221,7 @@ class StripeWebhookController extends Controller
                     'status' => 'approved', // Payment release = Final Approval (not 'completed')
                     'payment_status' => 'released', // Mark as released - Stripe confirmed
                     'is_approved' => true, // ALWAYS set approval when payment is released
+                    'awaiting_funds' => false,
                 ];
 
                 // Set approved_at if not already set
